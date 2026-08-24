@@ -54,7 +54,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v2.6")
+        self.title("trolltype // DeepSeek Edition v2.7")
         self.geometry("1080x760")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -180,10 +180,10 @@ class TrollTypeDesktopApp(ctk.CTk):
         lbl = ctk.CTkLabel(self.tab_deepseek, text="FreeDeepseekAPI Endpoint Settings", font=("JetBrains Mono", 18, "bold"), text_color=MAIN)
         lbl.pack(pady=20)
 
-        sub_lbl = ctk.CTkLabel(self.tab_deepseek, text="URL локального сервера FreeDeepseekAPI (OpenAI-compatible /v1)", font=("JetBrains Mono", 12), text_color=SUB)
+        sub_lbl = ctk.CTkLabel(self.tab_deepseek, text="Если сервер на том же компьютере — используй http://127.0.0.1:8000/v1 (или твой порт)", font=("JetBrains Mono", 12), text_color=SUB)
         sub_lbl.pack(pady=(0, 10))
 
-        self.ent_ds_url = ctk.CTkEntry(self.tab_deepseek, placeholder_text="http://localhost:8000/v1", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_ds_url = ctk.CTkEntry(self.tab_deepseek, placeholder_text="http://127.0.0.1:8000/v1", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
         self.ent_ds_url.pack(pady=8)
         self.ent_ds_url.insert(0, self.cfg.deepseek_base_url)
 
@@ -195,9 +195,31 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.ent_ds_model.pack(pady=8)
         self.ent_ds_model.insert(0, self.cfg.deepseek_model)
 
+        btn_test_ds = ctk.CTkButton(self.tab_deepseek, text="⚡ Проверить подключение к DeepSeek", fg_color=BG, text_color=MAIN, width=420, height=36, corner_radius=8, font=("JetBrains Mono", 12, "bold"),
+                                    command=lambda: self.async_call(self._test_deepseek_connection()))
+        btn_test_ds.pack(pady=6)
+
+        self.lbl_ds_test = ctk.CTkLabel(self.tab_deepseek, text="", font=("JetBrains Mono", 11), text_color=MAIN)
+        self.lbl_ds_test.pack(pady=2)
+
         btn_save_ds = ctk.CTkButton(self.tab_deepseek, text="Save DeepSeek Settings", fg_color=MAIN, text_color=BG, width=420, height=40, corner_radius=8, font=("JetBrains Mono", 13, "bold"),
                                     command=self._save_deepseek_settings)
-        btn_save_ds.pack(pady=16)
+        btn_save_ds.pack(pady=10)
+
+    async def _test_deepseek_connection(self):
+        url = self.ent_ds_url.get().strip()
+        key = self.ent_ds_key.get().strip()
+        model = self.ent_ds_model.get().strip()
+        self.ai.update_settings(url, key, model)
+
+        self.after(0, lambda: self.lbl_ds_test.configure(text="⏳ Отправка тестового запроса...", text_color=MAIN))
+        res = await self.ai.generate_reply("test_user", "привет")
+        if res and not res.startswith("иди нахуй завали"):
+            self.after(0, lambda: self.lbl_ds_test.configure(text="✅ Успешно! DeepSeek генерирует живой ответ.", text_color=MAIN))
+            self.append_log(f"[DEEPSEEK TEST OK] Response: {res[:60]}...")
+        else:
+            self.after(0, lambda: self.lbl_ds_test.configure(text=f"❌ Ошибка подключения к {url}! Проверь запущен ли сервер.", text_color=ERROR))
+            self.append_log(f"[DEEPSEEK TEST FAILED] Cannot reach {url}", level="ERROR")
 
     def _init_target_tab(self):
         self.tab_target = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -248,7 +270,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.lbl_active_target = ctk.CTkLabel(side, text=self.cfg.target_username or "None", font=("JetBrains Mono", 15, "bold"), text_color=MAIN)
         self.lbl_active_target.pack(pady=(0, 8))
 
-        # Target All Checkbox (fg_color instead of progress_color)
         self.chk_target_all = ctk.CTkCheckBox(side, text="Троллить ВСЕХ в чате", font=("JetBrains Mono", 12), text_color=TEXT,
                                               fg_color=MAIN, hover_color=MAIN, command=self._toggle_target_all)
         self.chk_target_all.pack(pady=4)
@@ -407,13 +428,32 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.after(0, lambda: self.lbl_auth_hint.configure(text=f"❌ Ошибка входа: {e}", text_color=ERROR))
             self.append_log(f"[AUTH SIGN-IN ERROR] {e}", level="ERROR")
 
-    async def _load_dialogs(self):
-        dialogs = await self.tg.get_dialogs_list()
-        for w in self.chat_list_box.winfo_children():
-            w.destroy()
+    def _load_dialogs_sync(self, dialogs):
+        # Clean up children on main GUI thread safely
+        for w in list(self.chat_list_box.winfo_children()):
+            try:
+                w.destroy()
+            except Exception:
+                pass
         for d in dialogs:
             btn = ctk.CTkButton(self.chat_list_box, text=f"{d['title']}", fg_color=BG, text_color=TEXT, anchor="w", corner_radius=6, height=34,
                                 command=lambda chat=d: self.async_call(self._select_chat(chat)))
+            btn.pack(fill="x", pady=2)
+
+    async def _load_dialogs(self):
+        dialogs = await self.tg.get_dialogs_list()
+        self.after(0, lambda: self._load_dialogs_sync(dialogs))
+
+    def _render_chat_messages_sync(self, messages):
+        for w in list(self.msg_list_box.winfo_children()):
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        for m in messages:
+            sender_display = f"{m['sender_name']} (@{m['username']})" if m['username'] else m['sender_name']
+            btn = ctk.CTkButton(self.msg_list_box, text=f"{sender_display}: {m['text'][:45]}", fg_color=BG, text_color=TEXT, anchor="w", corner_radius=6, height=34,
+                                command=lambda msg=m: self._pick_target_from_msg(msg))
             btn.pack(fill="x", pady=2)
 
     async def _select_chat(self, chat_info):
@@ -423,14 +463,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.save()
         self.append_log(f"[CHAT] Selected chat: {chat_info['title']} ({chat_info['id']})")
         messages = await self.tg.get_recent_messages(chat_info['id'], limit=30)
-        
-        for w in self.msg_list_box.winfo_children():
-            w.destroy()
-        for m in messages:
-            sender_display = f"{m['sender_name']} (@{m['username']})" if m['username'] else m['sender_name']
-            btn = ctk.CTkButton(self.msg_list_box, text=f"{sender_display}: {m['text'][:45]}", fg_color=BG, text_color=TEXT, anchor="w", corner_radius=6, height=34,
-                                command=lambda msg=m: self._pick_target_from_msg(msg))
-            btn.pack(fill="x", pady=2)
+        self.after(0, lambda: self._render_chat_messages_sync(messages))
 
     def _pick_target_from_msg(self, msg):
         self.cfg.target_id = msg['sender_id']
