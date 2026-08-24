@@ -53,8 +53,8 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.0")
-        self.geometry("1080x760")
+        self.title("trolltype // DeepSeek Edition v3.1")
+        self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
 
@@ -67,10 +67,13 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.emulator = TypingEmulator()
         self.tg = TelegramHandler(self.cfg.api_id, self.cfg.api_hash, self.cfg.session_name)
         self.tg.on_log_callback = self.append_log
+        self.tg.mention_every_n = self.cfg.mention_frequency
 
         self.target_mode_all = False
         self.current_tab = None
-        self.current_typo_rate = 0.08  # Аккуратные 8% опечаток
+        self.current_typo_rate = 0.08
+        self.auto_bait_running = False
+        
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_async_loop, daemon=True)
         self.thread.start()
@@ -92,7 +95,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.0 realistic chatter", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.1 auto-bait & mentions", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -275,26 +278,40 @@ class TrollTypeDesktopApp(ctk.CTk):
         side.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
         lbl_target_info = ctk.CTkLabel(side, text="CURRENT TARGET", font=("JetBrains Mono", 11), text_color=SUB)
-        lbl_target_info.pack(pady=(12, 2))
+        lbl_target_info.pack(pady=(8, 2))
 
         self.lbl_active_target = ctk.CTkLabel(side, text=self.cfg.target_username or "None", font=("JetBrains Mono", 15, "bold"), text_color=MAIN)
-        self.lbl_active_target.pack(pady=(0, 6))
+        self.lbl_active_target.pack(pady=(0, 4))
 
-        self.chk_target_all = ctk.CTkCheckBox(side, text="Троллить ВСЕХ в чате", font=("JetBrains Mono", 12), text_color=TEXT,
-                                              fg_color=MAIN, hover_color=MAIN, command=self._toggle_target_all)
-        self.chk_target_all.pack(pady=2)
-
-        self.ent_target_manual = ctk.CTkEntry(side, placeholder_text="Target (@nick or Name)", fg_color=BG, text_color=TEXT, corner_radius=6, height=36)
-        self.ent_target_manual.pack(fill="x", padx=14, pady=4)
+        self.ent_target_manual = ctk.CTkEntry(side, placeholder_text="Target (@nick or Name)", fg_color=BG, text_color=TEXT, corner_radius=6, height=34)
+        self.ent_target_manual.pack(fill="x", padx=14, pady=2)
         if self.cfg.target_username:
             self.ent_target_manual.insert(0, self.cfg.target_username)
 
-        btn_set_target = ctk.CTkButton(side, text="Set Target", fg_color=BG, text_color=TEXT, height=32, corner_radius=6, command=self._set_manual_target)
-        btn_set_target.pack(fill="x", padx=14, pady=4)
+        btn_set_target = ctk.CTkButton(side, text="Set Target", fg_color=BG, text_color=TEXT, height=30, corner_radius=6, command=self._set_manual_target)
+        btn_set_target.pack(fill="x", padx=14, pady=2)
+
+        # Режим авто-нападения (Auto-Bait if silent)
+        self.chk_auto_bait = ctk.CTkCheckBox(side, text="Авто-нападение (если молчит)", font=("JetBrains Mono", 11), text_color=TEXT,
+                                             fg_color=MAIN, hover_color=MAIN, command=self._toggle_auto_bait)
+        self.chk_auto_bait.pack(pady=4)
+
+        self.chk_target_all = ctk.CTkCheckBox(side, text="Троллить ВСЕХ в чате", font=("JetBrains Mono", 11), text_color=TEXT,
+                                              fg_color=MAIN, hover_color=MAIN, command=self._toggle_target_all)
+        self.chk_target_all.pack(pady=2)
+
+        # Настройка частоты тега @username (каждые N сообщений)
+        lbl_freq = ctk.CTkLabel(side, text=f"ТЕГАТЬ @username: КАЖДЫЕ {self.cfg.mention_frequency} СОО", font=("JetBrains Mono", 10), text_color=SUB)
+        lbl_freq.pack(pady=(6, 1))
+        self.lbl_freq_val = lbl_freq
+
+        self.freq_slider = ctk.CTkSlider(side, from_=1, to=30, number_of_steps=29, progress_color=MAIN, command=self._on_freq_slide)
+        self.freq_slider.set(self.cfg.mention_frequency)
+        self.freq_slider.pack(fill="x", padx=14, pady=2)
 
         # Typo Rate Slider (default 8%)
-        lbl_typo = ctk.CTkLabel(side, text="ПРОЦЕНТ ОПЕЧАТОК: 8%", font=("JetBrains Mono", 11), text_color=SUB)
-        lbl_typo.pack(pady=(10, 2))
+        lbl_typo = ctk.CTkLabel(side, text="ПРОЦЕНТ ОПЕЧАТОК: 8%", font=("JetBrains Mono", 10), text_color=SUB)
+        lbl_typo.pack(pady=(6, 1))
         self.lbl_typo_val = lbl_typo
 
         self.typo_slider = ctk.CTkSlider(side, from_=0, to=30, number_of_steps=30, progress_color=MAIN, command=self._on_typo_slide)
@@ -302,20 +319,39 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.typo_slider.pack(fill="x", padx=14, pady=2)
 
         lbl_style = ctk.CTkLabel(side, text="STYLE MODE", font=("JetBrains Mono", 11), text_color=SUB)
-        lbl_style.pack(pady=(10, 2))
+        lbl_style.pack(pady=(6, 2))
 
         self.seg_style = ctk.CTkSegmentedButton(side, values=["aggressive", "schizo", "mixed"], command=self._on_style_change,
                                                 selected_color=MAIN, selected_hover_color=MAIN, text_color=BG, corner_radius=6)
         self.seg_style.set(self.cfg.style)
-        self.seg_style.pack(fill="x", padx=14, pady=4)
+        self.seg_style.pack(fill="x", padx=14, pady=2)
 
         self.btn_run = ctk.CTkButton(side, text="▶ START ENGINE", fg_color=MAIN, text_color=BG, font=("JetBrains Mono", 14, "bold"),
-                                     height=46, corner_radius=8, command=self.toggle_engine)
-        self.btn_run.pack(side="bottom", fill="x", padx=14, pady=16)
+                                     height=44, corner_radius=8, command=self.toggle_engine)
+        self.btn_run.pack(side="bottom", fill="x", padx=14, pady=12)
+
+    def _on_freq_slide(self, val):
+        self.cfg.mention_frequency = int(val)
+        self.tg.mention_every_n = int(val)
+        self.lbl_freq_val.configure(text=f"ТЕГАТЬ @username: КАЖДЫЕ {int(val)} СОО")
+        self.cfg.save()
 
     def _on_typo_slide(self, val):
         self.current_typo_rate = val / 100.0
         self.lbl_typo_val.configure(text=f"ПРОЦЕНТ ОПЕЧАТОК: {int(val)}%")
+
+    def _toggle_auto_bait(self):
+        self.auto_bait_running = bool(self.chk_auto_bait.get())
+        self.cfg.auto_bait_enabled = self.auto_bait_running
+        self.cfg.save()
+        if self.auto_bait_running:
+            self.append_log("[AUTO-BAIT] Enabled: Bot will continuously provoke target if they remain silent.")
+            if self.tg.is_running:
+                self._start_auto_bait_loop()
+        else:
+            self.append_log("[AUTO-BAIT] Disabled.")
+            if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():
+                self.tg.auto_bait_task.cancel()
 
     def _toggle_target_all(self):
         self.target_mode_all = bool(self.chk_target_all.get())
@@ -515,13 +551,43 @@ class TrollTypeDesktopApp(ctk.CTk):
         reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
         chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
         
+        mention_tag = self.cfg.target_username if not self.target_mode_all else sender_title
         await self.tg.send_ladder_chunks(
             chat_id=event.chat_id,
             chunks=chunks,
             ladder_pause=self.cfg.ladder_pause,
             wpm=self.cfg.wpm_rate,
-            emulator=self.emulator
+            emulator=self.emulator,
+            target_mention=mention_tag
         )
+
+    def _start_auto_bait_loop(self):
+        async def _bait_worker():
+            while self.tg.is_running and self.auto_bait_running:
+                await asyncio.sleep(self.cfg.auto_bait_interval)
+                if not self.tg.is_running or not self.auto_bait_running or not self.tg.active_chat_id:
+                    break
+                
+                # Генерируем провокационный выпад, если в чате тишина
+                target_name = self.cfg.target_username or "жертва"
+                self.append_log(f"[AUTO-BAIT] Provoking target @{target_name} due to silence...")
+                
+                bait_text = await self.ai.generate_reply(target_name, "ты че замолчал пес слит", style=self.cfg.style)
+                bait_with_typos = self.emulator.apply_typos(bait_text, typo_rate=self.current_typo_rate)
+                chunks = self.emulator.chunk_text(bait_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
+                
+                await self.tg.send_ladder_chunks(
+                    chat_id=self.tg.active_chat_id,
+                    chunks=chunks,
+                    ladder_pause=self.cfg.ladder_pause,
+                    wpm=self.cfg.wpm_rate,
+                    emulator=self.emulator,
+                    target_mention=self.cfg.target_username
+                )
+
+        if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():
+            self.tg.auto_bait_task.cancel()
+        self.tg.auto_bait_task = asyncio.create_task(_bait_worker())
 
     def toggle_engine(self):
         if not self.tg.is_running:
@@ -529,10 +595,16 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.tg.active_chat_id = self.cfg.selected_chat_id
             self.tg.target_username = self.cfg.target_username
             self.tg.target_id = self.cfg.target_id
+            self.tg.total_sent_count = 0
             self.btn_run.configure(text="■ STOP ENGINE", fg_color=ERROR)
             self.append_log(f"[ENGINE] Running on {self.cfg.selected_chat_title} @ {self.cfg.wpm_rate} WPM")
+            
+            if self.auto_bait_running:
+                self._start_auto_bait_loop()
         else:
             self.tg.is_running = False
+            if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():
+                self.tg.auto_bait_task.cancel()
             self.btn_run.configure(text="▶ START ENGINE", fg_color=MAIN)
             self.append_log("[ENGINE] Stopped.")
 

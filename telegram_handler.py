@@ -18,7 +18,13 @@ class TelegramHandler:
         self.active_chat_id: Optional[int] = None
         self.is_running = False
         
+        # Счетчик отправленных сообщений для периодического тега (@username раз в N сообщений)
+        self.total_sent_count: int = 0
+        self.mention_every_n: int = 15
+        
         self.current_stream_task: Optional[asyncio.Task] = None
+        self.auto_bait_task: Optional[asyncio.Task] = None
+        
         self.on_message_callback: Optional[Callable] = None
         self.on_typing_callback: Optional[Callable] = None
         self.on_log_callback: Optional[Callable] = None
@@ -122,19 +128,28 @@ class TelegramHandler:
 
                 self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
-    async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator):
-        # Ограничиваем залп максимум 8-12 сообщениями, чтобы никогда не ловить flood limits в Telegram
+    async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None):
         safe_chunks = chunks[:12]
         
+        # Проверяем, нужно ли добавить тег @username в начало первого сообщения
+        if safe_chunks and target_mention:
+            clean_tag = target_mention.strip()
+            if clean_tag and not clean_tag.startswith('@'):
+                clean_tag = f"@{clean_tag}"
+            
+            # Если счетчик кратен mention_every_n (или это первый залп)
+            if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
+                safe_chunks[0] = f"{clean_tag} {safe_chunks[0]}"
+                self.log(f"[TAGGING TARGET] Added mention {clean_tag} to burst header")
+
         for idx, chunk in enumerate(safe_chunks):
             if not self.is_running:
                 break
             try:
-                # Безопасная пауза против лимитов (0.35-0.5s между сообщениями)
                 await asyncio.sleep(max(0.35, ladder_pause))
-
                 await self.client.send_message(chat_id, chunk)
-                self.log(f"[SENT #{idx+1}/{len(safe_chunks)}] {chunk}")
+                self.total_sent_count += 1
+                self.log(f"[SENT #{idx+1}/{len(safe_chunks)}] (Total sent: {self.total_sent_count}) {chunk}")
 
             except asyncio.CancelledError:
                 self.log("[INTERRUPTED] Stream cancelled by fresh message.")

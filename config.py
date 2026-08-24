@@ -12,7 +12,6 @@ class AppConfig:
     api_id: int = int(os.getenv("TG_API_ID", "1234567"))
     api_hash: str = os.getenv("TG_API_HASH", "your_api_hash_here")
     
-    # DeepSeek / FreeDeepseekAPI
     deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "http://localhost:8000/v1")
     deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "free-deepseek-api")
     deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
@@ -25,12 +24,17 @@ class AppConfig:
     selected_chat_title: str = ""
     
     wpm_rate: int = 380
-    ladder_pause: float = 0.08       # Сверхбыстрая пулеметная пауза между обрывками (80 мс)
-    min_chunk_words: int = 1
-    max_chunk_words: int = 3
+    ladder_pause: float = 0.35
+    min_chunk_words: int = 2
+    max_chunk_words: int = 4
     style: str = "aggressive"
     parallel_typing: bool = True
     reflex_123: bool = True
+    
+    # Режим авто-нападения (Auto-Bait)
+    auto_bait_enabled: bool = False
+    auto_bait_interval: int = 15      # каждые 15 сек при молчании
+    mention_frequency: int = 15       # отмечать @username раз в N сообщений
 
     @classmethod
     def load(cls) -> "AppConfig":
