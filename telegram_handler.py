@@ -23,6 +23,10 @@ class TelegramHandler:
         self.mention_every_n: int = 15
         self.last_target_msg_time: float = time.time()
         
+        # Строгий lock и флаг активности отправки для исключения параллельных залпов
+        self.send_lock = asyncio.Lock()
+        self.is_actively_sending: bool = False
+        
         self.current_stream_task: Optional[asyncio.Task] = None
         self.auto_bait_task: Optional[asyncio.Task] = None
         
@@ -126,46 +130,51 @@ class TelegramHandler:
                 self.last_target_msg_time = time.time()
 
             if self.on_message_callback:
+                # Если уже идет активная отправка — отменяем старый таск и запускаем новый реактивный
                 if self.current_stream_task and not self.current_stream_task.done():
                     self.current_stream_task.cancel()
-                    self.log(f"[INTERRUPT] Target spoke (@{username}), canceling previous stream to react immediately!")
+                    self.log(f"[CANCEL OLD STREAM] Target triggered new reply (@{username})")
 
                 self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
-        active_chunks = chunks[:35]
-        
-        if active_chunks and target_mention:
-            clean_tag = target_mention.strip()
-            if " " not in clean_tag:
-                if not clean_tag.startswith('@'):
-                    clean_tag = f"@{clean_tag}"
-                if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
-                    active_chunks[0] = f"{clean_tag} {active_chunks[0]}"
+        async with self.send_lock:
+            self.is_actively_sending = True
+            active_chunks = chunks[:20]
+            
+            if active_chunks and target_mention:
+                clean_tag = target_mention.strip()
+                if " " not in clean_tag:
+                    if not clean_tag.startswith('@'):
+                        clean_tag = f"@{clean_tag}"
+                    if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
+                        active_chunks[0] = f"{clean_tag} {active_chunks[0]}"
 
-        for idx, chunk in enumerate(active_chunks):
-            if not self.is_running:
-                break
             try:
-                await asyncio.sleep(max(0.20, ladder_pause))
-                
-                # Первый чанк отправляем через reply (ответ на сообщение), остальные обычной очередью
-                if idx == 0 and reply_to_msg_id:
-                    await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
-                else:
-                    await self.client.send_message(chat_id, chunk)
+                for idx, chunk in enumerate(active_chunks):
+                    if not self.is_running:
+                        break
                     
-                self.total_sent_count += 1
-                self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
+                    # Безопасная пауза против flood (0.55s), чтобы Telegram не банил отправку
+                    await asyncio.sleep(max(0.55, ladder_pause))
+                    
+                    if idx == 0 and reply_to_msg_id:
+                        await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
+                    else:
+                        await self.client.send_message(chat_id, chunk)
+                        
+                    self.total_sent_count += 1
+                    self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
             except asyncio.CancelledError:
-                self.log("[INTERRUPTED] Stream cleanly cancelled to switch to fresh incoming message response.")
-                break
+                self.log("[STREAM INTERRUPTED] Cancelled cleanly to start new reaction.")
             except FloodWaitError as fwe:
-                self.log(f"[FLOOD WAIT] Telegram wait {fwe.seconds}s", level="ERROR")
+                self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
                 await asyncio.sleep(fwe.seconds + 1)
-                break
             except Exception as e:
                 self.log(f"[SEND ERROR] {e}", level="ERROR")
-                await asyncio.sleep(0.3)
-                break
+                await asyncio.sleep(1.0)
+            finally:
+                self.is_actively_sending = False
+                # Обновляем время после завершения пачки, чтобы авто-нападение не срабатывало сразу же
+                self.last_target_msg_time = time.time()
