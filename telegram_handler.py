@@ -1,8 +1,7 @@
 import asyncio
 import traceback
 from telethon import TelegramClient, events
-from telethon.errors import FloodWaitError, SessionPasswordNeededError, FloodError
-from telethon.tl.types import User
+from telethon.errors import FloodWaitError, SessionPasswordNeededError
 from typing import Callable, Optional, List, Dict
 from logger import logger
 
@@ -122,42 +121,43 @@ class TelegramHandler:
                     is_target = True
 
             if self.on_message_callback:
+                # Если цель написала новое сообщение — мгновенно прерываем текущий стрим и генерируем свежий ответ на новое сообщение!
                 if self.current_stream_task and not self.current_stream_task.done():
                     self.current_stream_task.cancel()
-                    self.log(f"[INTERRUPT] Target spoke (@{username}), firing instant counter-burst!")
+                    self.log(f"[INTERRUPT] Target spoke (@{username}), canceling previous stream to react immediately!")
 
                 self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None):
-        safe_chunks = chunks[:8]
+        # Отправляем полный непрерывный поток (до 25-35 сообщений)
+        active_chunks = chunks[:35]
         
-        # Форматируем тег только если это реальный @username (без пробелов)
-        if safe_chunks and target_mention:
+        if active_chunks and target_mention:
             clean_tag = target_mention.strip()
-            # Тегаем только если это валидный username без пробелов
             if " " not in clean_tag:
                 if not clean_tag.startswith('@'):
                     clean_tag = f"@{clean_tag}"
                 if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
-                    safe_chunks[0] = f"{clean_tag} {safe_chunks[0]}"
+                    active_chunks[0] = f"{clean_tag} {active_chunks[0]}"
 
-        for idx, chunk in enumerate(safe_chunks):
+        for idx, chunk in enumerate(active_chunks):
             if not self.is_running:
                 break
             try:
-                await asyncio.sleep(max(0.35, ladder_pause))
+                # Скоростная отправка (~200мс пауза) для непрерывного поливания
+                await asyncio.sleep(max(0.20, ladder_pause))
                 await self.client.send_message(chat_id, chunk)
                 self.total_sent_count += 1
-                self.log(f"[SENT #{idx+1}/{len(safe_chunks)}] (Total: {self.total_sent_count}) {chunk}")
+                self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
             except asyncio.CancelledError:
-                self.log("[INTERRUPTED] Stream cancelled by fresh message.")
+                self.log("[INTERRUPTED] Stream cleanly cancelled to switch to fresh incoming message response.")
                 break
             except FloodWaitError as fwe:
-                self.log(f"[FLOOD WAIT] Telegram asked to wait {fwe.seconds}s", level="ERROR")
+                self.log(f"[FLOOD WAIT] Telegram wait {fwe.seconds}s", level="ERROR")
                 await asyncio.sleep(fwe.seconds + 1)
                 break
             except Exception as e:
-                self.log(f"[RATE/SEND ERROR] {e}", level="ERROR")
-                await asyncio.sleep(0.5)
+                self.log(f"[SEND ERROR] {e}", level="ERROR")
+                await asyncio.sleep(0.3)
                 break

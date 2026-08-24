@@ -35,16 +35,11 @@ NEARBY_KEYS_RU = {
     'ю': ['б', 'ж', 'д']
 }
 
-# Короткие ключевые слова, которые никогда нельзя портить опечатками для читаемости
 PROTECTED_WORDS = {"хуй", "ебало", "пидор", "нах", "нахуй", "рот", "мать", "бля", "блять", "пес", "че", "ты", "я", "те"}
 
 class TypingEmulator:
     @staticmethod
     def apply_typos(text: str, typo_rate: float = 0.07) -> str:
-        """
-        Умеренный реалистичный процент опечаток (6-9%). 
-        Короткие маты остаются разборчивыми, опечатки происходят только в длинных словах.
-        """
         if typo_rate <= 0:
             return text
 
@@ -53,7 +48,6 @@ class TypingEmulator:
 
         for word in words:
             clean_w = word.lower().strip()
-            # Защита коротких матов и спецсимволов от превращения в кашу
             if clean_w in PROTECTED_WORDS or len(word) <= 3 or any(ch.isdigit() for ch in word):
                 result_words.append(word)
                 continue
@@ -87,7 +81,10 @@ class TypingEmulator:
         return " ".join(result_words)
 
     @staticmethod
-    def chunk_text(text: str, min_words: int = 2, max_words: int = 4) -> List[str]:
+    def chunk_text(text: str, min_words: int = 1, max_words: int = 3) -> List[str]:
+        """
+        Разбивает текст на короткие обрывки по 1-3 слова, создавая очередь из 15-25 сообщений на залп.
+        """
         words = text.split()
         chunks = []
         current = []
