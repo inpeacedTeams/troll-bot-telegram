@@ -11,7 +11,12 @@ CONFIG_FILE = "config.json"
 class AppConfig:
     api_id: int = int(os.getenv("TG_API_ID", "1234567"))
     api_hash: str = os.getenv("TG_API_HASH", "your_api_hash_here")
-    openai_key: str = os.getenv("OPENAI_API_KEY", "")
+    
+    # DeepSeek / FreeDeepseekAPI settings (OpenAI-compatible)
+    deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "http://localhost:8000/v1")
+    deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "free-deepseek-api")
+    deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    
     session_name: str = "troll_session"
     
     target_username: str = ""

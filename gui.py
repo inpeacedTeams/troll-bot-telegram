@@ -7,7 +7,7 @@ from datetime import datetime
 
 from config import AppConfig
 from logger import logger
-from ai_engine import AIEngine
+from ai_engine import DeepSeekAIEngine
 from typing_emulator import TypingEmulator
 from telegram_handler import TelegramHandler
 from animator import SmoothAnimator
@@ -26,7 +26,7 @@ class AnimatedPillButton(ctk.CTkButton):
         super().__init__(
             master,
             text=text,
-            width=84,
+            width=88,
             height=30,
             corner_radius=6,
             font=("JetBrains Mono", 12, "bold"),
@@ -54,13 +54,17 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // desktop v2.4 (smooth iOS edition)")
-        self.geometry("1060x720")
+        self.title("trolltype // DeepSeek Edition v2.5")
+        self.geometry("1080x720")
         self.minsize(920, 620)
         self.configure(fg_color=BG)
 
         self.cfg = AppConfig.load()
-        self.ai = AIEngine(self.cfg.openai_key)
+        self.ai = DeepSeekAIEngine(
+            base_url=self.cfg.deepseek_base_url,
+            api_key=self.cfg.deepseek_api_key,
+            model=self.cfg.deepseek_model
+        )
         self.emulator = TypingEmulator()
         self.tg = TelegramHandler(self.cfg.api_id, self.cfg.api_hash, self.cfg.session_name)
         self.tg.on_log_callback = self.append_log
@@ -88,6 +92,9 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
+        ai_tag = ctk.CTkLabel(header, text="powered by FreeDeepseekAPI", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag.pack(side="left", padx=12)
+
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
         self.lbl_status.pack(side="right")
 
@@ -97,6 +104,9 @@ class TrollTypeDesktopApp(ctk.CTk):
 
         self.btn_tab_auth = AnimatedPillButton(self.pill_bar, "auth", lambda: self.show_tab("auth"))
         self.btn_tab_auth.pack(side="left", padx=4, pady=7)
+
+        self.btn_tab_deepseek = AnimatedPillButton(self.pill_bar, "deepseek", lambda: self.show_tab("deepseek"))
+        self.btn_tab_deepseek.pack(side="left", padx=4, pady=7)
 
         self.btn_tab_target = AnimatedPillButton(self.pill_bar, "target", lambda: self.show_tab("target"))
         self.btn_tab_target.pack(side="left", padx=4, pady=7)
@@ -116,6 +126,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.container.pack(fill="both", expand=True, padx=28, pady=12)
 
         self._init_auth_tab()
+        self._init_deepseek_tab()
         self._init_target_tab()
         self._init_arena_tab()
 
@@ -143,6 +154,31 @@ class TrollTypeDesktopApp(ctk.CTk):
         btn_login = ctk.CTkButton(self.tab_auth, text="Sign In & Authorize", fg_color=MAIN, text_color=BG, width=340, height=40, corner_radius=8, font=("JetBrains Mono", 13, "bold"),
                                   command=lambda: self.async_call(self._action_sign_in()))
         btn_login.pack(pady=16)
+
+    def _init_deepseek_tab(self):
+        self.tab_deepseek = ctk.CTkFrame(self.container, fg_color=SUB_ALT, corner_radius=10)
+        
+        lbl = ctk.CTkLabel(self.tab_deepseek, text="FreeDeepseekAPI Endpoint Settings", font=("JetBrains Mono", 18, "bold"), text_color=MAIN)
+        lbl.pack(pady=20)
+
+        sub_lbl = ctk.CTkLabel(self.tab_deepseek, text="URL локального сервера FreeDeepseekAPI (OpenAI-compatible /v1)", font=("JetBrains Mono", 12), text_color=SUB)
+        sub_lbl.pack(pady=(0, 10))
+
+        self.ent_ds_url = ctk.CTkEntry(self.tab_deepseek, placeholder_text="http://localhost:8000/v1", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_ds_url.pack(pady=8)
+        self.ent_ds_url.insert(0, self.cfg.deepseek_base_url)
+
+        self.ent_ds_key = ctk.CTkEntry(self.tab_deepseek, placeholder_text="API Key (default: free-deepseek-api)", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_ds_key.pack(pady=8)
+        self.ent_ds_key.insert(0, self.cfg.deepseek_api_key)
+
+        self.ent_ds_model = ctk.CTkEntry(self.tab_deepseek, placeholder_text="Model (e.g. deepseek-chat)", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_ds_model.pack(pady=8)
+        self.ent_ds_model.insert(0, self.cfg.deepseek_model)
+
+        btn_save_ds = ctk.CTkButton(self.tab_deepseek, text="Save DeepSeek Settings", fg_color=MAIN, text_color=BG, width=420, height=40, corner_radius=8, font=("JetBrains Mono", 13, "bold"),
+                                    command=self._save_deepseek_settings)
+        btn_save_ds.pack(pady=16)
 
     def _init_target_tab(self):
         self.tab_target = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -220,29 +256,45 @@ class TrollTypeDesktopApp(ctk.CTk):
 
         self.current_tab = tab_name
         self.btn_tab_auth.set_active(tab_name == "auth", animate)
+        self.btn_tab_deepseek.set_active(tab_name == "deepseek", animate)
         self.btn_tab_target.set_active(tab_name == "target", animate)
         self.btn_tab_arena.set_active(tab_name == "arena", animate)
 
         target_widget = None
         if tab_name == "auth":
             target_widget = self.tab_auth
+        elif tab_name == "deepseek":
+            target_widget = self.tab_deepseek
         elif tab_name == "target":
             target_widget = self.tab_target
         else:
             target_widget = self.tab_arena
 
         self.tab_auth.pack_forget()
+        self.tab_deepseek.pack_forget()
         self.tab_target.pack_forget()
         self.tab_arena.pack_forget()
 
         target_widget.pack(fill="both", expand=True)
 
         if animate:
-            # iOS-like smooth fade/slide in
             SmoothAnimator.animate(
                 self.container, 0.0, 1.0, duration_ms=220, steps=14,
                 update_callback=lambda p: None
             )
+
+    def _save_deepseek_settings(self):
+        url = self.ent_ds_url.get().strip()
+        key = self.ent_ds_key.get().strip()
+        model = self.ent_ds_model.get().strip()
+
+        self.cfg.deepseek_base_url = url
+        self.cfg.deepseek_api_key = key
+        self.cfg.deepseek_model = model
+        self.cfg.save()
+
+        self.ai.update_settings(url, key, model)
+        self.append_log(f"[DEEPSEEK] Updated endpoint: {url} | Model: {model}")
 
     def append_log(self, text: str):
         self.after(0, lambda: self._insert_text(text))
@@ -351,7 +403,7 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.tg.target_username = self.cfg.target_username
             self.tg.target_id = self.cfg.target_id
             self.btn_run.configure(text="■ STOP ENGINE", fg_color=ERROR)
-            self.append_log(f"[ENGINE] Running on {self.cfg.selected_chat_title} @ {self.cfg.wpm_rate} WPM")
+            self.append_log(f"[ENGINE] Running on {self.cfg.selected_chat_title} @ {self.cfg.wpm_rate} WPM (DeepSeek backend)")
         else:
             self.tg.is_running = False
             self.btn_run.configure(text="▶ START ENGINE", fg_color=MAIN)
