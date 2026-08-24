@@ -39,7 +39,7 @@ PROTECTED_WORDS = {"хуй", "ебало", "пидор", "нах", "нахуй",
 
 class TypingEmulator:
     @staticmethod
-    def apply_typos(text: str, typo_rate: float = 0.07) -> str:
+    def apply_typos(text: str, typo_rate: float = 0.06) -> str:
         if typo_rate <= 0:
             return text
 
@@ -83,7 +83,7 @@ class TypingEmulator:
     @staticmethod
     def chunk_text(text: str, min_words: int = 1, max_words: int = 3) -> List[str]:
         """
-        Разбивает текст на короткие обрывки по 1-3 слова, создавая очередь из 15-25 сообщений на залп.
+        Разбивает текст по 1-3 слова для непрерывной длинной лесенки (30-80 сообщений).
         """
         words = text.split()
         chunks = []

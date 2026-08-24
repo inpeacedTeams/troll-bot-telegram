@@ -23,7 +23,6 @@ class TelegramHandler:
         self.mention_every_n: int = 15
         self.last_target_msg_time: float = time.time()
         
-        # Строгий lock и флаг активности отправки для исключения параллельных залпов
         self.send_lock = asyncio.Lock()
         self.is_actively_sending: bool = False
         
@@ -130,17 +129,17 @@ class TelegramHandler:
                 self.last_target_msg_time = time.time()
 
             if self.on_message_callback:
-                # Если уже идет активная отправка — отменяем старый таск и запускаем новый реактивный
                 if self.current_stream_task and not self.current_stream_task.done():
                     self.current_stream_task.cancel()
-                    self.log(f"[CANCEL OLD STREAM] Target triggered new reply (@{username})")
+                    self.log(f"[CANCEL OLD STREAM] Target spoke (@{username}), switching to reaction!")
 
                 self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
         async with self.send_lock:
             self.is_actively_sending = True
-            active_chunks = chunks[:20]
+            # Отправляем весь массив сообщений без раннего обрезания (до 100+ чанков)
+            active_chunks = chunks[:120]
             
             if active_chunks and target_mention:
                 clean_tag = target_mention.strip()
@@ -155,8 +154,8 @@ class TelegramHandler:
                     if not self.is_running:
                         break
                     
-                    # Безопасная пауза против flood (0.55s), чтобы Telegram не банил отправку
-                    await asyncio.sleep(max(0.55, ladder_pause))
+                    # Плавная быстрая пауза (0.35-0.45с) для непрерывного пулеметного троллинга
+                    await asyncio.sleep(max(0.38, ladder_pause))
                     
                     if idx == 0 and reply_to_msg_id:
                         await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
@@ -173,8 +172,7 @@ class TelegramHandler:
                 await asyncio.sleep(fwe.seconds + 1)
             except Exception as e:
                 self.log(f"[SEND ERROR] {e}", level="ERROR")
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
             finally:
                 self.is_actively_sending = False
-                # Обновляем время после завершения пачки, чтобы авто-нападение не срабатывало сразу же
                 self.last_target_msg_time = time.time()
