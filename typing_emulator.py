@@ -1,7 +1,6 @@
 import random
 from typing import List
 
-# Соседние клавиши на русской раскладке ЙЦУКЕН для реалистичных мисскликов
 NEARBY_KEYS_RU = {
     'й': ['ц', 'ф', 'ы', '1', '2'],
     'ц': ['й', 'у', 'ы', 'в', '2', '3'],
@@ -40,10 +39,6 @@ NEARBY_KEYS_RU = {
 class TypingEmulator:
     @staticmethod
     def apply_typos(text: str, typo_rate: float = 0.15) -> str:
-        """
-        Добавляет реалистичные опечатки (миссклики, пропуск букв, свап букв, даблклики)
-        в зависимости от заданного процента опечаток.
-        """
         if typo_rate <= 0:
             return text
 
@@ -51,7 +46,6 @@ class TypingEmulator:
         result_words = []
 
         for word in words:
-            # Если это спецсимволы или смайлики типа 00))), не портим
             if any(ch.isdigit() for ch in word) or len(word) <= 2:
                 result_words.append(word)
                 continue
@@ -65,20 +59,16 @@ class TypingEmulator:
 
                 if random.random() < typo_rate:
                     typo_type = random.choice(["neighbor", "skip", "swap", "double"])
-                    
                     if typo_type == "neighbor" and lower_char in NEARBY_KEYS_RU:
                         sub = random.choice(NEARBY_KEYS_RU[lower_char])
                         new_chars.append(sub.upper() if char.isupper() else sub)
                     elif typo_type == "skip" and len(chars) > 3:
-                        # Пропуск буквы (привт)
                         pass
                     elif typo_type == "swap" and i + 1 < len(chars):
-                        # Свап двух букв местами
                         new_chars.append(chars[i+1])
                         new_chars.append(char)
                         i += 1
                     elif typo_type == "double":
-                        # Даблклик буквы (приввет)
                         new_chars.append(char)
                         new_chars.append(char)
                     else:
@@ -92,7 +82,10 @@ class TypingEmulator:
         return " ".join(result_words)
 
     @staticmethod
-    def chunk_text(text: str, min_words: int = 1, max_words: int = 2) -> List[str]:
+    def chunk_text(text: str, min_words: int = 2, max_words: int = 4) -> List[str]:
+        """
+        Разбивает текст на плотные обрывки по 2-4 слова, чтобы залп укладывался в 6-10 сообщений.
+        """
         words = text.split()
         chunks = []
         current = []

@@ -1,7 +1,7 @@
 import asyncio
 import traceback
 from telethon import TelegramClient, events
-from telethon.errors import FloodWaitError, SessionPasswordNeededError
+from telethon.errors import FloodWaitError, SessionPasswordNeededError, FloodError
 from typing import Callable, Optional, List, Dict
 from logger import logger
 
@@ -18,9 +18,7 @@ class TelegramHandler:
         self.active_chat_id: Optional[int] = None
         self.is_running = False
         
-        # Cancelable stream task to interrupt current typing when target sends a new triggering message
         self.current_stream_task: Optional[asyncio.Task] = None
-        
         self.on_message_callback: Optional[Callable] = None
         self.on_typing_callback: Optional[Callable] = None
         self.on_log_callback: Optional[Callable] = None
@@ -118,32 +116,34 @@ class TelegramHandler:
                     is_target = True
 
             if self.on_message_callback:
-                # Если пришло новое сообщение от таргета — прерываем старую досылку и мгновенно перебиваем
                 if self.current_stream_task and not self.current_stream_task.done():
                     self.current_stream_task.cancel()
-                    self.log(f"[INTERRUPT] Target spoke again (@{username}), interrupting old queue to fire fresh reflex!")
+                    self.log(f"[INTERRUPT] Target spoke (@{username}), firing fresh counter-burst!")
 
                 self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator):
-        for idx, chunk in enumerate(chunks):
+        # Ограничиваем залп максимум 8-12 сообщениями, чтобы никогда не ловить flood limits в Telegram
+        safe_chunks = chunks[:12]
+        
+        for idx, chunk in enumerate(safe_chunks):
             if not self.is_running:
                 break
             try:
-                delay = emulator.calculate_typing_delay(chunk, wpm)
-                if delay > 0.01:
-                    await asyncio.sleep(delay)
+                # Безопасная пауза против лимитов (0.35-0.5s между сообщениями)
+                await asyncio.sleep(max(0.35, ladder_pause))
 
                 await self.client.send_message(chat_id, chunk)
-                self.log(f"[SENT #{idx+1}] {chunk}")
+                self.log(f"[SENT #{idx+1}/{len(safe_chunks)}] {chunk}")
 
-                if ladder_pause > 0.01:
-                    await asyncio.sleep(ladder_pause)
             except asyncio.CancelledError:
-                self.log("[CANCELLED] Ladder stream cancelled by newer trigger.")
+                self.log("[INTERRUPTED] Stream cancelled by fresh message.")
                 break
             except FloodWaitError as fwe:
-                self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
-                await asyncio.sleep(fwe.seconds)
+                self.log(f"[FLOOD WAIT] Telegram asked to wait {fwe.seconds}s", level="ERROR")
+                await asyncio.sleep(fwe.seconds + 1)
+                break
             except Exception as e:
-                self.log(f"[ERROR SENDING] {e}", level="ERROR")
+                self.log(f"[RATE/SEND ERROR] {e}", level="ERROR")
+                await asyncio.sleep(1.0)
+                break
