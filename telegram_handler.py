@@ -1,5 +1,6 @@
 import asyncio
 import traceback
+import time
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
 from typing import Callable, Optional, List, Dict
@@ -20,6 +21,7 @@ class TelegramHandler:
         
         self.total_sent_count: int = 0
         self.mention_every_n: int = 15
+        self.last_target_msg_time: float = time.time()
         
         self.current_stream_task: Optional[asyncio.Task] = None
         self.auto_bait_task: Optional[asyncio.Task] = None
@@ -120,16 +122,17 @@ class TelegramHandler:
                 elif first_name and target_clean in first_name:
                     is_target = True
 
+            if is_target:
+                self.last_target_msg_time = time.time()
+
             if self.on_message_callback:
-                # Если цель написала новое сообщение — мгновенно прерываем текущий стрим и генерируем свежий ответ на новое сообщение!
                 if self.current_stream_task and not self.current_stream_task.done():
                     self.current_stream_task.cancel()
                     self.log(f"[INTERRUPT] Target spoke (@{username}), canceling previous stream to react immediately!")
 
                 self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
-    async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None):
-        # Отправляем полный непрерывный поток (до 25-35 сообщений)
+    async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
         active_chunks = chunks[:35]
         
         if active_chunks and target_mention:
@@ -144,9 +147,14 @@ class TelegramHandler:
             if not self.is_running:
                 break
             try:
-                # Скоростная отправка (~200мс пауза) для непрерывного поливания
                 await asyncio.sleep(max(0.20, ladder_pause))
-                await self.client.send_message(chat_id, chunk)
+                
+                # Первый чанк отправляем через reply (ответ на сообщение), остальные обычной очередью
+                if idx == 0 and reply_to_msg_id:
+                    await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
+                else:
+                    await self.client.send_message(chat_id, chunk)
+                    
                 self.total_sent_count += 1
                 self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
