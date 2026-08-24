@@ -12,7 +12,6 @@ from typing_emulator import TypingEmulator
 from telegram_handler import TelegramHandler
 from animator import SmoothAnimator
 
-# Monkeytype refined dark-yellow palette
 ctk.set_appearance_mode("dark")
 BG = "#323437"
 MAIN = "#e2b714"
@@ -54,7 +53,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v2.8")
+        self.title("trolltype // DeepSeek Edition v2.9")
         self.geometry("1080x760")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -98,7 +97,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
         self.lbl_status.pack(side="right")
 
-        # Pill navigation bar
         self.pill_bar = ctk.CTkFrame(self, fg_color=SUB_ALT, corner_radius=8, height=44)
         self.pill_bar.pack(fill="x", padx=28, pady=4)
 
@@ -121,7 +119,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.wpm_slider.set(self.cfg.wpm_rate)
         self.wpm_slider.pack(side="right", padx=8)
 
-        # Tab Views Container
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=28, pady=12)
 
@@ -195,7 +192,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.ent_ds_model.pack(pady=6)
         self.ent_ds_model.insert(0, self.cfg.deepseek_model)
 
-        # Action buttons row
         btn_row = ctk.CTkFrame(self.tab_deepseek, fg_color="transparent")
         btn_row.pack(pady=6)
 
@@ -227,7 +223,7 @@ class TrollTypeDesktopApp(ctk.CTk):
 
         self.after(0, lambda: self.lbl_ds_test.configure(text="⏳ Отправка тестового запроса...", text_color=MAIN))
         res = await self.ai.generate_reply("test_user", "привет")
-        if res and not res.startswith("иди нахуй завали"):
+        if res:
             self.after(0, lambda: self.lbl_ds_test.configure(text="✅ Успешно! DeepSeek подключен и генерирует живой ответ.", text_color=MAIN))
             self.append_log(f"[DEEPSEEK TEST OK] Response: {res[:60]}...")
         else:
@@ -278,14 +274,14 @@ class TrollTypeDesktopApp(ctk.CTk):
         side.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
         lbl_target_info = ctk.CTkLabel(side, text="CURRENT TARGET", font=("JetBrains Mono", 11), text_color=SUB)
-        lbl_target_info.pack(pady=(14, 2))
+        lbl_target_info.pack(pady=(12, 2))
 
         self.lbl_active_target = ctk.CTkLabel(side, text=self.cfg.target_username or "None", font=("JetBrains Mono", 15, "bold"), text_color=MAIN)
-        self.lbl_active_target.pack(pady=(0, 8))
+        self.lbl_active_target.pack(pady=(0, 6))
 
         self.chk_target_all = ctk.CTkCheckBox(side, text="Троллить ВСЕХ в чате", font=("JetBrains Mono", 12), text_color=TEXT,
                                               fg_color=MAIN, hover_color=MAIN, command=self._toggle_target_all)
-        self.chk_target_all.pack(pady=4)
+        self.chk_target_all.pack(pady=2)
 
         self.ent_target_manual = ctk.CTkEntry(side, placeholder_text="Target (@nick or Name)", fg_color=BG, text_color=TEXT, corner_radius=6, height=36)
         self.ent_target_manual.pack(fill="x", padx=14, pady=4)
@@ -295,8 +291,18 @@ class TrollTypeDesktopApp(ctk.CTk):
         btn_set_target = ctk.CTkButton(side, text="Set Target", fg_color=BG, text_color=TEXT, height=32, corner_radius=6, command=self._set_manual_target)
         btn_set_target.pack(fill="x", padx=14, pady=4)
 
+        # Typo Rate Slider
+        lbl_typo = ctk.CTkLabel(side, text=f"ПРОЦЕНТ ОПЕЧАТОК: {int(self.cfg.ladder_pause * 100)}%", font=("JetBrains Mono", 11), text_color=SUB)
+        lbl_typo.pack(pady=(10, 2))
+        self.lbl_typo_val = lbl_typo
+
+        self.typo_slider = ctk.CTkSlider(side, from_=0, to=40, number_of_steps=40, progress_color=MAIN, command=self._on_typo_slide)
+        self.typo_slider.set(18)
+        self.typo_slider.pack(fill="x", padx=14, pady=2)
+        self.current_typo_rate = 0.18
+
         lbl_style = ctk.CTkLabel(side, text="STYLE MODE", font=("JetBrains Mono", 11), text_color=SUB)
-        lbl_style.pack(pady=(12, 4))
+        lbl_style.pack(pady=(10, 2))
 
         self.seg_style = ctk.CTkSegmentedButton(side, values=["aggressive", "schizo", "mixed"], command=self._on_style_change,
                                                 selected_color=MAIN, selected_hover_color=MAIN, text_color=BG, corner_radius=6)
@@ -306,6 +312,10 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.btn_run = ctk.CTkButton(side, text="▶ START ENGINE", fg_color=MAIN, text_color=BG, font=("JetBrains Mono", 14, "bold"),
                                      height=46, corner_radius=8, command=self.toggle_engine)
         self.btn_run.pack(side="bottom", fill="x", padx=14, pady=16)
+
+    def _on_typo_slide(self, val):
+        self.current_typo_rate = val / 100.0
+        self.lbl_typo_val.configure(text=f"ПРОЦЕНТ ОПЕЧАТОК: {int(val)}%")
 
     def _toggle_target_all(self):
         self.target_mode_all = bool(self.chk_target_all.get())
@@ -499,9 +509,13 @@ class TrollTypeDesktopApp(ctk.CTk):
         if not should_respond:
             return
 
-        self.append_log(f"[AI GENERATING] Responding to @{sender_title}...")
+        self.append_log(f"[AI GENERATING] Triggered response on '{text[:25]}'...")
         reply_full = await self.ai.generate_reply(sender_title, text, style=self.cfg.style)
-        chunks = self.emulator.chunk_text(reply_full, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
+        
+        # Накладываем реалистичные опечатки (миссклики, свапы, даблклики)
+        reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
+        
+        chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
         
         await self.tg.send_ladder_chunks(
             chat_id=event.chat_id,

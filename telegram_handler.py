@@ -18,8 +18,7 @@ class TelegramHandler:
         self.active_chat_id: Optional[int] = None
         self.is_running = False
         
-        # Lock to prevent overlapping responses and message interleaving
-        self.is_sending_lock = asyncio.Lock()
+        # Cancelable stream task to interrupt current typing when target sends a new triggering message
         self.current_stream_task: Optional[asyncio.Task] = None
         
         self.on_message_callback: Optional[Callable] = None
@@ -100,7 +99,7 @@ class TelegramHandler:
                 return
             if event.chat_id != self.active_chat_id:
                 return
-            if event.out:  # Игнорировать свои собственные исходящие сообщения!
+            if event.out:
                 return
 
             sender = await event.get_sender()
@@ -119,32 +118,32 @@ class TelegramHandler:
                     is_target = True
 
             if self.on_message_callback:
-                # Если бот прямо сейчас уже поливает чат пастой, не запускаем дублирующие параллельные потоки
-                if self.is_sending_lock.locked():
-                    self.log(f"[QUEUED/DROPPED] Already actively responding, ignoring parallel spawn from @{username}")
-                    return
+                # Если пришло новое сообщение от таргета — прерываем старую досылку и мгновенно перебиваем
+                if self.current_stream_task and not self.current_stream_task.done():
+                    self.current_stream_task.cancel()
+                    self.log(f"[INTERRUPT] Target spoke again (@{username}), interrupting old queue to fire fresh reflex!")
 
-                await self.on_message_callback(event, is_target, sender)
+                self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator):
-        async with self.is_sending_lock:
-            # Запускаем фоновый typing action один раз, а не на каждое микросообщение
-            for idx, chunk in enumerate(chunks):
-                if not self.is_running:
-                    break
-                try:
-                    # Быстрый расчет WPM паузы (без лишних оверхедов)
-                    delay = emulator.calculate_typing_delay(chunk, wpm)
-                    if delay > 0.05:
-                        await asyncio.sleep(delay)
+        for idx, chunk in enumerate(chunks):
+            if not self.is_running:
+                break
+            try:
+                delay = emulator.calculate_typing_delay(chunk, wpm)
+                if delay > 0.01:
+                    await asyncio.sleep(delay)
 
-                    await self.client.send_message(chat_id, chunk)
-                    self.log(f"[SENT #{idx+1}] {chunk}")
+                await self.client.send_message(chat_id, chunk)
+                self.log(f"[SENT #{idx+1}] {chunk}")
 
-                    if ladder_pause > 0.02:
-                        await asyncio.sleep(ladder_pause)
-                except FloodWaitError as fwe:
-                    self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
-                    await asyncio.sleep(fwe.seconds)
-                except Exception as e:
-                    self.log(f"[ERROR SENDING] {e}", level="ERROR")
+                if ladder_pause > 0.01:
+                    await asyncio.sleep(ladder_pause)
+            except asyncio.CancelledError:
+                self.log("[CANCELLED] Ladder stream cancelled by newer trigger.")
+                break
+            except FloodWaitError as fwe:
+                self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
+                await asyncio.sleep(fwe.seconds)
+            except Exception as e:
+                self.log(f"[ERROR SENDING] {e}", level="ERROR")
