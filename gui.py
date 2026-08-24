@@ -248,9 +248,9 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.lbl_active_target = ctk.CTkLabel(side, text=self.cfg.target_username or "None", font=("JetBrains Mono", 15, "bold"), text_color=MAIN)
         self.lbl_active_target.pack(pady=(0, 8))
 
-        # Target All Checkbox
+        # Target All Checkbox (fg_color instead of progress_color)
         self.chk_target_all = ctk.CTkCheckBox(side, text="Троллить ВСЕХ в чате", font=("JetBrains Mono", 12), text_color=TEXT,
-                                              progress_color=MAIN, command=self._toggle_target_all)
+                                              fg_color=MAIN, hover_color=MAIN, command=self._toggle_target_all)
         self.chk_target_all.pack(pady=4)
 
         self.ent_target_manual = ctk.CTkEntry(side, placeholder_text="Target (@nick or Name)", fg_color=BG, text_color=TEXT, corner_radius=6, height=36)
@@ -447,16 +447,13 @@ class TrollTypeDesktopApp(ctk.CTk):
         sender_title = getattr(sender, 'username', '') or getattr(sender, 'first_name', 'Unknown')
         text = event.text or ""
         
-        # Если включен режим "Троллить ВСЕХ"
         should_respond = is_target or self.target_mode_all
-        
         status_tag = "TARGET" if is_target else ("ALL-MODE" if self.target_mode_all else "USER (SKIPPED)")
         self.append_log(f"[{status_tag} @{sender_title}] {text}")
 
         if not should_respond:
             return
 
-        # Generate Reply & Stream Ladder Chunks
         self.append_log(f"[AI GENERATING] Responding to @{sender_title}...")
         reply_full = await self.ai.generate_reply(sender_title, text, style=self.cfg.style)
         chunks = self.emulator.chunk_text(reply_full, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
