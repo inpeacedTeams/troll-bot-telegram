@@ -1,5 +1,6 @@
 import random
-from openai import AsyncOpenAI
+import aiohttp
+import json
 from logger import logger
 
 SYSTEM_PROMPTS = {
@@ -20,43 +21,58 @@ class DeepSeekAIEngine:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or "free-deepseek-api"
         self.model = model or "deepseek-chat"
-        self.client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
 
     def update_settings(self, base_url: str, api_key: str, model: str):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or "free-deepseek-api"
         self.model = model or "deepseek-chat"
-        self.client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
 
     async def generate_reply(self, target_name: str, incoming_text: str, style: str = "aggressive") -> str:
-        # Быстрый рефлекс на провокацию '123'
+        # Быстрый рефлекс на '123'
         if "123" in incoming_text:
             return f"123 пидорас ебаный {target_name} ты че думаешь я с читом сижу завали ебало нахуй"
 
         prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["aggressive"]).format(name=target_name)
+        endpoint = f"{self.base_url}/chat/completions"
         
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": incoming_text}
+            ],
+            "max_tokens": 120,
+            "temperature": 0.95
+        }
+
         try:
-            logger.info(f"[DEEPSEEK] Requesting response from {self.base_url} (model: {self.model})")
-            res = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": incoming_text}
-                ],
-                max_tokens=120,
-                temperature=0.95
-            )
-            reply = res.choices[0].message.content.strip()
-            # Очистка возможных тегов размышлений DeepSeek R1/V3
-            if "</think>" in reply:
-                reply = reply.split("</think>")[-1].strip()
-            return reply if reply else f"ХАХААХ {target_name} ЗАВАЛИ ЕБАЛО"
+            logger.info(f"[DEEPSEEK] POST {endpoint} (model: {self.model})")
+            timeout = aiohttp.ClientTimeout(total=20)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(endpoint, headers=headers, json=payload) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        reply = data["choices"][0]["message"]["content"].strip()
+                        # Очистка возможных тегов размышлений DeepSeek R1/V3
+                        if "</think>" in reply:
+                            reply = reply.split("</think>")[-1].strip()
+                        return reply if reply else f"ХАХААХ {target_name} ЗАВАЛИ ЕБАЛО"
+                    else:
+                        err_body = await resp.text()
+                        logger.error(f"[DEEPSEEK HTTP {resp.status}] {err_body}")
         except Exception as e:
             logger.error(f"[DEEPSEEK ERROR] {e}")
-            fallbacks = [
-                f"ХАХААХ ДОЛБОЕБ {target_name} НАХУЙ ХУЛИ ТЫ ТУТ ПИЗДИШЬ ВООБЩЕ",
-                f"ЗАКРОЙ ЕБАЛО {target_name} ВЫБЛЯДОК ПОКА Я ТЕБЕ МАТЬ ЕБУ",
-                f"АХЫВАХЫАХ )) {target_name} ДОЛБОЕБ ЗАКРОЙ РОТ НАХУЙ ВАХАХАЫ",
-                f"ПИДОРАС ЕБАНЫЙ {target_name} ИДИ НАХУЙ ЗАБЛЕВАННЫЙ"
-            ]
-            return random.choice(fallbacks)
+
+        # Fallback при ошибке соединения
+        fallbacks = [
+            f"ХАХААХ ДОЛБОЕБ {target_name} НАХУЙ ХУЛИ ТЫ ТУТ ПИЗДИШЬ ВООБЩЕ",
+            f"ЗАКРОЙ ЕБАЛО {target_name} ВЫБЛЯДОК ПОКА Я ТЕБЕ МАТЬ ЕБУ",
+            f"АХЫВАХЫАХ )) {target_name} ДОЛБОЕБ ЗАКРОЙ РОТ НАХУЙ ВАХАХАЫ",
+            f"ПИДОРАС ЕБАНЫЙ {target_name} ИДИ НАХУЙ ЗАБЛЕВАННЫЙ"
+        ]
+        return random.choice(fallbacks)
