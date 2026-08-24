@@ -1,20 +1,46 @@
+import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from dotenv import load_dotenv
 
 load_dotenv()
 
+CONFIG_FILE = "config.json"
+
 @dataclass
-class Config:
+class AppConfig:
     api_id: int = int(os.getenv("TG_API_ID", "1234567"))
     api_hash: str = os.getenv("TG_API_HASH", "your_api_hash_here")
     openai_key: str = os.getenv("OPENAI_API_KEY", "")
     session_name: str = "troll_session"
     
     target_username: str = ""
+    target_id: int = 0
+    selected_chat_id: int = 0
+    selected_chat_title: str = ""
+    
     wpm_rate: int = 380
     ladder_pause: float = 0.6
     min_chunk_words: int = 2
     max_chunk_words: int = 8
     style: str = "aggressive"
     parallel_typing: bool = True
+    reflex_123: bool = True
+
+    @classmethod
+    def load(cls) -> "AppConfig":
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return cls(**data)
+            except Exception:
+                pass
+        return cls()
+
+    def save(self):
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(asdict(self), f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"[ERROR] Failed to save config: {e}")
