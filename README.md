@@ -1,2 +1,29 @@
-# troll-bot-telegram
-Telegram AI Troll Bot with Monkeytype-inspired GUI, WPM typing emulation, and ladder chunking
+# troll-bot-telegram (trolltype v2.4)
+
+Автоматизированный тролль-бот для Telegram с Monkeytype-эстетикой интерфейса, эмуляцией скорости печати (до 450 WPM), отправкой сообщений лесенкой (по 2–8 слов) и генерацией ответов через OpenAI API.
+
+## Возможности (Фазы 1–7)
+- ⚡ **Вход по Telethon**: безопасное сохранение сессии Telegram.
+- 🎯 **Выбор чата и таргета**: перехват сообщений указанного пользователя.
+- ⌨️ **WPM Typing Emulator**: натуральная эмуляция набора текста со скоростью от 30 до 450 слов в минуту.
+- 🪜 **Smart Ladder**: логическая разбивка длинного ответа на смысловые фразы по 2–8 слов с задержкой между ними.
+- 🤖 **AI-генерация**: динамические оскорбления, поддержка стилей (aggressive, schizo, mixed) и моментальный рефлекс на '123'.
+- 🎨 **Monkeytype GUI**: стильный минималистичный интерфейс на CustomTkinter.
+
+## Установка и запуск
+
+```bash
+# 1. Клонировать репозиторий
+git clone https://github.com/inpeacedTeams/troll-bot-telegram.git
+cd troll-bot-telegram
+
+# 2. Установить зависимости
+pip install -r requirements.txt
+
+# 3. Настроить конфигурацию
+cp .env.example .env
+# Заполните TG_API_ID, TG_API_HASH и OPENAI_API_KEY в .env
+
+# 4. Запустить приложение
+python main.py
+```
