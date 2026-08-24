@@ -6,7 +6,7 @@ class TypingEmulator:
     @staticmethod
     def chunk_text(text: str, min_words: int = 1, max_words: int = 2) -> List[str]:
         """
-        Разбивает текст на живые человеческие обрывки по 1-2 слова.
+        Разбивает текст на ультра-короткие всплески по 1-2 слова, как при бешеном рейде.
         """
         words = text.split()
         chunks = []
@@ -26,4 +26,4 @@ class TypingEmulator:
     def calculate_typing_delay(chunk: str, wpm: int = 380) -> float:
         words_count = len(chunk.split())
         delay = (words_count / max(wpm, 30)) * 60.0
-        return max(0.01, min(delay, 0.2))
+        return max(0.01, min(delay, 0.15))
