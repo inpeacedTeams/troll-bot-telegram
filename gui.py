@@ -117,7 +117,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.lbl_wpm_val = ctk.CTkLabel(self.pill_bar, text=f"{self.cfg.wpm_rate} WPM", font=("JetBrains Mono", 13, "bold"), text_color=MAIN)
         self.lbl_wpm_val.pack(side="right", padx=12)
 
-        self.wpm_slider = ctk.CTkSlider(self.pill_bar, from_=30, to_=450, number_of_steps=42, progress_color=MAIN, command=self._on_wpm_slide)
+        self.wpm_slider = ctk.CTkSlider(self.pill_bar, from_=30, to=450, number_of_steps=42, progress_color=MAIN, command=self._on_wpm_slide)
         self.wpm_slider.set(self.cfg.wpm_rate)
         self.wpm_slider.pack(side="right", padx=8)
 

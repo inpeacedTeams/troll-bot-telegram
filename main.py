@@ -1,11 +1,10 @@
 import asyncio
 import customtkinter as ctk
-from config import Config
-from ai_engine import AIEngine
+from config import AppConfig
+from ai_engine import DeepSeekAIEngine
 from typing_emulator import TypingEmulator
 from telegram_handler import TelegramHandler
 
-# Monkeytype dark-yellow theme
 ctk.set_appearance_mode("dark")
 BG_COLOR = "#323437"
 MAIN_COLOR = "#e2b714"
@@ -15,30 +14,28 @@ TEXT_COLOR = "#d1d0c5"
 class TrollBotApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // Telegram Engine v2.4")
+        self.title("trolltype // Telegram Engine v2.5")
         self.geometry("980x640")
         self.configure(fg_color=BG_COLOR)
 
-        self.cfg = Config()
-        self.ai = AIEngine(self.cfg.openai_key)
+        self.cfg = AppConfig.load()
+        self.ai = DeepSeekAIEngine(self.cfg.deepseek_base_url, self.cfg.deepseek_api_key, self.cfg.deepseek_model)
         self.tg = TelegramHandler(self.cfg.api_id, self.cfg.api_hash)
         self.emulator = TypingEmulator()
 
         self._build_ui()
 
     def _build_ui(self):
-        # Header
         head = ctk.CTkFrame(self, fg_color="transparent")
         head.pack(fill="x", padx=24, pady=12)
         
         title = ctk.CTkLabel(head, text="⚡ trolltype engine", font=("JetBrains Mono", 20, "bold"), text_color=MAIN_COLOR)
         title.pack(side="left")
 
-        # Config Pill Bar
         pill = ctk.CTkFrame(self, fg_color=SUB_ALT, corner_radius=8)
         pill.pack(fill="x", padx=24, pady=6)
 
-        self.wpm_slider = ctk.CTkSlider(pill, from_=30, to_=450, number_of_steps=42, command=self._on_wpm_change, progress_color=MAIN_COLOR)
+        self.wpm_slider = ctk.CTkSlider(pill, from_=30, to=450, number_of_steps=42, command=self._on_wpm_change, progress_color=MAIN_COLOR)
         self.wpm_slider.set(self.cfg.wpm_rate)
         self.wpm_slider.pack(side="left", padx=16, pady=8)
 
@@ -48,12 +45,10 @@ class TrollBotApp(ctk.CTk):
         self.status_lbl = ctk.CTkLabel(pill, text="● READY", font=("JetBrains Mono", 12), text_color="#646669")
         self.status_lbl.pack(side="right", padx=16)
 
-        # Log & Arena Box
         self.log_box = ctk.CTkTextbox(self, fg_color=SUB_ALT, text_color=TEXT_COLOR, font=("JetBrains Mono", 13), wrap="word")
         self.log_box.pack(fill="both", expand=True, padx=24, pady=12)
         self.log_box.insert("end", "[SYSTEM] trolltype initialized. Ready to launch.\n")
 
-        # Controls Bottom
         ctrl = ctk.CTkFrame(self, fg_color="transparent")
         ctrl.pack(fill="x", padx=24, pady=12)
 
@@ -66,6 +61,7 @@ class TrollBotApp(ctk.CTk):
     def _on_wpm_change(self, val):
         self.cfg.wpm_rate = int(val)
         self.wpm_lbl.configure(text=f"{self.cfg.wpm_rate} WPM")
+        self.cfg.save()
 
     def toggle_engine(self):
         if not self.tg.is_running:
