@@ -2,6 +2,7 @@ import asyncio
 import traceback
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError, SessionPasswordNeededError, FloodError
+from telethon.tl.types import User
 from typing import Callable, Optional, List, Dict
 from logger import logger
 
@@ -18,7 +19,6 @@ class TelegramHandler:
         self.active_chat_id: Optional[int] = None
         self.is_running = False
         
-        # Счетчик отправленных сообщений для периодического тега (@username раз в N сообщений)
         self.total_sent_count: int = 0
         self.mention_every_n: int = 15
         
@@ -124,23 +124,22 @@ class TelegramHandler:
             if self.on_message_callback:
                 if self.current_stream_task and not self.current_stream_task.done():
                     self.current_stream_task.cancel()
-                    self.log(f"[INTERRUPT] Target spoke (@{username}), firing fresh counter-burst!")
+                    self.log(f"[INTERRUPT] Target spoke (@{username}), firing instant counter-burst!")
 
                 self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None):
-        safe_chunks = chunks[:12]
+        safe_chunks = chunks[:8]
         
-        # Проверяем, нужно ли добавить тег @username в начало первого сообщения
+        # Форматируем тег только если это реальный @username (без пробелов)
         if safe_chunks and target_mention:
             clean_tag = target_mention.strip()
-            if clean_tag and not clean_tag.startswith('@'):
-                clean_tag = f"@{clean_tag}"
-            
-            # Если счетчик кратен mention_every_n (или это первый залп)
-            if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
-                safe_chunks[0] = f"{clean_tag} {safe_chunks[0]}"
-                self.log(f"[TAGGING TARGET] Added mention {clean_tag} to burst header")
+            # Тегаем только если это валидный username без пробелов
+            if " " not in clean_tag:
+                if not clean_tag.startswith('@'):
+                    clean_tag = f"@{clean_tag}"
+                if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
+                    safe_chunks[0] = f"{clean_tag} {safe_chunks[0]}"
 
         for idx, chunk in enumerate(safe_chunks):
             if not self.is_running:
@@ -149,7 +148,7 @@ class TelegramHandler:
                 await asyncio.sleep(max(0.35, ladder_pause))
                 await self.client.send_message(chat_id, chunk)
                 self.total_sent_count += 1
-                self.log(f"[SENT #{idx+1}/{len(safe_chunks)}] (Total sent: {self.total_sent_count}) {chunk}")
+                self.log(f"[SENT #{idx+1}/{len(safe_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
             except asyncio.CancelledError:
                 self.log("[INTERRUPTED] Stream cancelled by fresh message.")
@@ -160,5 +159,5 @@ class TelegramHandler:
                 break
             except Exception as e:
                 self.log(f"[RATE/SEND ERROR] {e}", level="ERROR")
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
                 break
