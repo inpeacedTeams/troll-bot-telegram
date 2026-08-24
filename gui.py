@@ -55,8 +55,8 @@ class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("trolltype // DeepSeek Edition v2.5")
-        self.geometry("1080x720")
-        self.minsize(920, 620)
+        self.geometry("1080x760")
+        self.minsize(920, 640)
         self.configure(fg_color=BG)
 
         self.cfg = AppConfig.load()
@@ -85,7 +85,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         return asyncio.run_coroutine_threadsafe(coro, self.loop)
 
     def _build_ui(self):
-        # Header Bar
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=28, pady=14)
 
@@ -98,7 +97,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
         self.lbl_status.pack(side="right")
 
-        # Monkeytype Pill Bar with Smooth Pills
+        # Pill navigation bar
         self.pill_bar = ctk.CTkFrame(self, fg_color=SUB_ALT, corner_radius=8, height=44)
         self.pill_bar.pack(fill="x", padx=28, pady=4)
 
@@ -130,30 +129,50 @@ class TrollTypeDesktopApp(ctk.CTk):
         self._init_target_tab()
         self._init_arena_tab()
 
-        self.show_tab("arena", animate=False)
+        self.show_tab("auth", animate=False)
 
     def _init_auth_tab(self):
         self.tab_auth = ctk.CTkFrame(self.container, fg_color=SUB_ALT, corner_radius=10)
         
-        lbl = ctk.CTkLabel(self.tab_auth, text="Telegram Authentication", font=("JetBrains Mono", 18, "bold"), text_color=MAIN)
-        lbl.pack(pady=20)
+        lbl = ctk.CTkLabel(self.tab_auth, text="Telegram API & Authentication", font=("JetBrains Mono", 18, "bold"), text_color=MAIN)
+        lbl.pack(pady=(16, 6))
 
-        self.ent_phone = ctk.CTkEntry(self.tab_auth, placeholder_text="+79991234567", width=340, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
-        self.ent_phone.pack(pady=8)
+        desc = ctk.CTkLabel(self.tab_auth, text="Укажи API ID и API Hash с my.telegram.org (код приходит в официальный клиент Telegram):", font=("JetBrains Mono", 11), text_color=SUB)
+        desc.pack(pady=(0, 12))
 
-        btn_send_code = ctk.CTkButton(self.tab_auth, text="Send Code", fg_color=MAIN, text_color=BG, width=340, height=36, corner_radius=8, font=("JetBrains Mono", 12, "bold"),
+        # API ID & API HASH Fields
+        row_creds = ctk.CTkFrame(self.tab_auth, fg_color="transparent")
+        row_creds.pack(pady=4)
+
+        self.ent_api_id = ctk.CTkEntry(row_creds, placeholder_text="API ID (e.g. 2938412)", width=170, height=38, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_api_id.pack(side="left", padx=4)
+        if self.cfg.api_id and self.cfg.api_id != 1234567:
+            self.ent_api_id.insert(0, str(self.cfg.api_id))
+
+        self.ent_api_hash = ctk.CTkEntry(row_creds, placeholder_text="API Hash (32-char hex)", width=240, height=38, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_api_hash.pack(side="left", padx=4)
+        if self.cfg.api_hash and self.cfg.api_hash != "your_api_hash_here":
+            self.ent_api_hash.insert(0, self.cfg.api_hash)
+
+        self.ent_phone = ctk.CTkEntry(self.tab_auth, placeholder_text="Номер телефона (в формате +79991234567)", width=420, height=38, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_phone.pack(pady=6)
+
+        btn_send_code = ctk.CTkButton(self.tab_auth, text="📩 Запросить код в Telegram", fg_color=MAIN, text_color=BG, width=420, height=38, corner_radius=8, font=("JetBrains Mono", 12, "bold"),
                                       command=lambda: self.async_call(self._action_send_code()))
-        btn_send_code.pack(pady=6)
+        btn_send_code.pack(pady=4)
 
-        self.ent_code = ctk.CTkEntry(self.tab_auth, placeholder_text="Confirmation Code", width=340, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
-        self.ent_code.pack(pady=8)
+        self.lbl_auth_hint = ctk.CTkLabel(self.tab_auth, text="", font=("JetBrains Mono", 11), text_color=MAIN)
+        self.lbl_auth_hint.pack(pady=2)
 
-        self.ent_2fa = ctk.CTkEntry(self.tab_auth, placeholder_text="2FA Password (if required)", width=340, height=40, corner_radius=8, show="*", fg_color=BG, text_color=TEXT)
-        self.ent_2fa.pack(pady=8)
+        self.ent_code = ctk.CTkEntry(self.tab_auth, placeholder_text="Код подтверждения (из чата Telegram)", width=420, height=38, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_code.pack(pady=6)
 
-        btn_login = ctk.CTkButton(self.tab_auth, text="Sign In & Authorize", fg_color=MAIN, text_color=BG, width=340, height=40, corner_radius=8, font=("JetBrains Mono", 13, "bold"),
+        self.ent_2fa = ctk.CTkEntry(self.tab_auth, placeholder_text="2FA Облачный пароль (если включен)", width=420, height=38, corner_radius=8, show="*", fg_color=BG, text_color=TEXT)
+        self.ent_2fa.pack(pady=6)
+
+        btn_login = ctk.CTkButton(self.tab_auth, text="Войти и сохранить сессию", fg_color=MAIN, text_color=BG, width=420, height=40, corner_radius=8, font=("JetBrains Mono", 13, "bold"),
                                   command=lambda: self.async_call(self._action_sign_in()))
-        btn_login.pack(pady=16)
+        btn_login.pack(pady=(10, 16))
 
     def _init_deepseek_tab(self):
         self.tab_deepseek = ctk.CTkFrame(self.container, fg_color=SUB_ALT, corner_radius=10)
@@ -220,7 +239,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.txt_arena = ctk.CTkTextbox(feed_panel, fg_color=BG, text_color=TEXT, font=("JetBrains Mono", 13), wrap="word", corner_radius=8)
         self.txt_arena.pack(fill="both", expand=True, padx=14, pady=14)
 
-        # Side Controls
         side = ctk.CTkFrame(self.tab_arena, fg_color=SUB_ALT, corner_radius=10)
         side.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
@@ -330,18 +348,50 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.tg.bind_listeners(self._handle_incoming_message)
 
     async def _action_send_code(self):
+        api_id_raw = self.ent_api_id.get().strip()
+        api_hash = self.ent_api_hash.get().strip()
         phone = self.ent_phone.get().strip()
-        await self.tg.send_code(phone)
-        self.append_log(f"[AUTH] Code requested for {phone}")
+
+        if not api_id_raw.isdigit() or not api_hash:
+            self.after(0, lambda: self.lbl_auth_hint.configure(text="❌ Заполни валидные API ID и API Hash с my.telegram.org", text_color=ERROR))
+            self.append_log("[AUTH ERROR] Invalid API ID / API Hash")
+            return
+
+        self.cfg.api_id = int(api_id_raw)
+        self.cfg.api_hash = api_hash
+        self.cfg.save()
+
+        # Re-init client with updated credentials
+        self.tg.api_id = self.cfg.api_id
+        self.tg.api_hash = self.cfg.api_hash
+        if self.tg.client:
+            await self.tg.client.disconnect()
+            self.tg.client = None
+
+        self.after(0, lambda: self.lbl_auth_hint.configure(text="⏳ Подключение к серверам Telegram...", text_color=MAIN))
+        
+        try:
+            await self.tg.send_code(phone)
+            self.after(0, lambda: self.lbl_auth_hint.configure(text=f"✅ Код успешно отправлен на номер {phone} в Telegram!", text_color=MAIN))
+            self.append_log(f"[AUTH] Code sent to {phone}. Check Telegram official app.")
+        except Exception as e:
+            self.after(0, lambda: self.lbl_auth_hint.configure(text=f"❌ Ошибка: {e}", text_color=ERROR))
+            self.append_log(f"[AUTH ERROR] {e}", level="ERROR")
 
     async def _action_sign_in(self):
         phone = self.ent_phone.get().strip()
         code = self.ent_code.get().strip()
         pwd = self.ent_2fa.get().strip() or None
-        await self.tg.sign_in_code(phone, code, pwd)
-        self.append_log("[AUTH] Successfully logged in!")
-        self.after(0, lambda: self.lbl_status.configure(text="TG: CONNECTED", text_color=MAIN))
-        self.tg.bind_listeners(self._handle_incoming_message)
+        
+        try:
+            await self.tg.sign_in_code(phone, code, pwd)
+            self.append_log("[AUTH] Successfully logged in!")
+            self.after(0, lambda: self.lbl_status.configure(text="TG: CONNECTED", text_color=MAIN))
+            self.after(0, lambda: self.lbl_auth_hint.configure(text="✅ Успешный вход! Переходи на вкладку target или live arena.", text_color=MAIN))
+            self.tg.bind_listeners(self._handle_incoming_message)
+        except Exception as e:
+            self.after(0, lambda: self.lbl_auth_hint.configure(text=f"❌ Ошибка входа: {e}", text_color=ERROR))
+            self.append_log(f"[AUTH SIGN-IN ERROR] {e}", level="ERROR")
 
     async def _load_dialogs(self):
         dialogs = await self.tg.get_dialogs_list()
