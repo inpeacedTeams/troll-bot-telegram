@@ -99,13 +99,19 @@ class TelegramHandler:
 
             sender = await event.get_sender()
             sender_id = event.sender_id
-            username = (getattr(sender, 'username', '') or '').lower()
+            username = (getattr(sender, 'username', '') or '').lower().replace('@', '')
+            first_name = (getattr(sender, 'first_name', '') or '').lower()
             
+            # Проверка соответствия таргету (по ID, по username, по имени)
             is_target = False
             if self.target_id and sender_id == self.target_id:
                 is_target = True
-            elif self.target_username and username == self.target_username.lower().replace('@', ''):
-                is_target = True
+            elif self.target_username:
+                target_clean = self.target_username.lower().replace('@', '')
+                if username and username == target_clean:
+                    is_target = True
+                elif first_name and target_clean in first_name:
+                    is_target = True
 
             if self.on_message_callback:
                 await self.on_message_callback(event, is_target, sender)

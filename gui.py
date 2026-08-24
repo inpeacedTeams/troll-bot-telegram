@@ -54,7 +54,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v2.5")
+        self.title("trolltype // DeepSeek Edition v2.6")
         self.geometry("1080x760")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -69,6 +69,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.tg = TelegramHandler(self.cfg.api_id, self.cfg.api_hash, self.cfg.session_name)
         self.tg.on_log_callback = self.append_log
 
+        self.target_mode_all = False
         self.current_tab = None
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_async_loop, daemon=True)
@@ -129,7 +130,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self._init_target_tab()
         self._init_arena_tab()
 
-        self.show_tab("auth", animate=False)
+        self.show_tab("arena", animate=False)
 
     def _init_auth_tab(self):
         self.tab_auth = ctk.CTkFrame(self.container, fg_color=SUB_ALT, corner_radius=10)
@@ -140,7 +141,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         desc = ctk.CTkLabel(self.tab_auth, text="Укажи API ID и API Hash с my.telegram.org (код приходит в официальный клиент Telegram):", font=("JetBrains Mono", 11), text_color=SUB)
         desc.pack(pady=(0, 12))
 
-        # API ID & API HASH Fields
         row_creds = ctk.CTkFrame(self.tab_auth, fg_color="transparent")
         row_creds.pack(pady=4)
 
@@ -243,21 +243,26 @@ class TrollTypeDesktopApp(ctk.CTk):
         side.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
         lbl_target_info = ctk.CTkLabel(side, text="CURRENT TARGET", font=("JetBrains Mono", 11), text_color=SUB)
-        lbl_target_info.pack(pady=(16, 2))
+        lbl_target_info.pack(pady=(14, 2))
 
         self.lbl_active_target = ctk.CTkLabel(side, text=self.cfg.target_username or "None", font=("JetBrains Mono", 15, "bold"), text_color=MAIN)
-        self.lbl_active_target.pack(pady=(0, 12))
+        self.lbl_active_target.pack(pady=(0, 8))
 
-        self.ent_target_manual = ctk.CTkEntry(side, placeholder_text="@username", fg_color=BG, text_color=TEXT, corner_radius=6, height=36)
+        # Target All Checkbox
+        self.chk_target_all = ctk.CTkCheckBox(side, text="Троллить ВСЕХ в чате", font=("JetBrains Mono", 12), text_color=TEXT,
+                                              progress_color=MAIN, command=self._toggle_target_all)
+        self.chk_target_all.pack(pady=4)
+
+        self.ent_target_manual = ctk.CTkEntry(side, placeholder_text="Target (@nick or Name)", fg_color=BG, text_color=TEXT, corner_radius=6, height=36)
         self.ent_target_manual.pack(fill="x", padx=14, pady=4)
         if self.cfg.target_username:
             self.ent_target_manual.insert(0, self.cfg.target_username)
 
-        btn_set_target = ctk.CTkButton(side, text="Set Manual Target", fg_color=BG, text_color=TEXT, height=32, corner_radius=6, command=self._set_manual_target)
+        btn_set_target = ctk.CTkButton(side, text="Set Target", fg_color=BG, text_color=TEXT, height=32, corner_radius=6, command=self._set_manual_target)
         btn_set_target.pack(fill="x", padx=14, pady=4)
 
         lbl_style = ctk.CTkLabel(side, text="STYLE MODE", font=("JetBrains Mono", 11), text_color=SUB)
-        lbl_style.pack(pady=(16, 4))
+        lbl_style.pack(pady=(12, 4))
 
         self.seg_style = ctk.CTkSegmentedButton(side, values=["aggressive", "schizo", "mixed"], command=self._on_style_change,
                                                 selected_color=MAIN, selected_hover_color=MAIN, text_color=BG, corner_radius=6)
@@ -267,6 +272,15 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.btn_run = ctk.CTkButton(side, text="▶ START ENGINE", fg_color=MAIN, text_color=BG, font=("JetBrains Mono", 14, "bold"),
                                      height=46, corner_radius=8, command=self.toggle_engine)
         self.btn_run.pack(side="bottom", fill="x", padx=14, pady=16)
+
+    def _toggle_target_all(self):
+        self.target_mode_all = bool(self.chk_target_all.get())
+        if self.target_mode_all:
+            self.lbl_active_target.configure(text="ALL USERS (ВЕСЬ ЧАТ)")
+            self.append_log("[MODE] Target mode: TROLL EVERYONE IN CHAT")
+        else:
+            self.lbl_active_target.configure(text=self.cfg.target_username or "None")
+            self.append_log(f"[MODE] Target mode: Single target (@{self.cfg.target_username})")
 
     def show_tab(self, tab_name: str, animate=True):
         if self.current_tab == tab_name:
@@ -332,12 +346,13 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.save()
 
     def _set_manual_target(self):
-        uname = self.ent_target_manual.get().strip()
+        uname = self.ent_target_manual.get().strip().replace('@', '')
         self.cfg.target_username = uname
         self.tg.target_username = uname
-        self.lbl_active_target.configure(text=uname or "None")
+        self.tg.target_id = None
+        self.lbl_active_target.configure(text=f"@{uname}" if uname else "None")
         self.cfg.save()
-        self.append_log(f"[TARGET] Manual target set to: {uname}")
+        self.append_log(f"[TARGET] Manual target set to: @{uname}")
 
     async def _check_initial_auth(self):
         authed = await self.tg.is_authorized()
@@ -361,7 +376,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.api_hash = api_hash
         self.cfg.save()
 
-        # Re-init client with updated credentials
         self.tg.api_id = self.cfg.api_id
         self.tg.api_hash = self.cfg.api_hash
         if self.tg.client:
@@ -372,7 +386,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         
         try:
             await self.tg.send_code(phone)
-            self.after(0, lambda: self.lbl_auth_hint.configure(text=f"✅ Код успешно отправлен на номер {phone} в Telegram!", text_color=MAIN))
+            self.after(0, lambda: self.lbl_auth_hint.configure(text=f"✅ Код отправлен на {phone} в Telegram!", text_color=MAIN))
             self.append_log(f"[AUTH] Code sent to {phone}. Check Telegram official app.")
         except Exception as e:
             self.after(0, lambda: self.lbl_auth_hint.configure(text=f"❌ Ошибка: {e}", text_color=ERROR))
@@ -424,17 +438,26 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.tg.target_id = msg['sender_id']
         self.tg.target_username = self.cfg.target_username
         self.lbl_active_target.configure(text=f"@{self.cfg.target_username}")
+        self.ent_target_manual.delete(0, "end")
+        self.ent_target_manual.insert(0, self.cfg.target_username)
         self.cfg.save()
         self.append_log(f"[TARGET SELECTED] {self.cfg.target_username} (ID: {self.cfg.target_id})")
 
     async def _handle_incoming_message(self, event, is_target: bool, sender):
         sender_title = getattr(sender, 'username', '') or getattr(sender, 'first_name', 'Unknown')
         text = event.text or ""
-        self.append_log(f"[{'TARGET' if is_target else 'USER'} @{sender_title}] {text}")
+        
+        # Если включен режим "Троллить ВСЕХ"
+        should_respond = is_target or self.target_mode_all
+        
+        status_tag = "TARGET" if is_target else ("ALL-MODE" if self.target_mode_all else "USER (SKIPPED)")
+        self.append_log(f"[{status_tag} @{sender_title}] {text}")
 
-        if not is_target:
+        if not should_respond:
             return
 
+        # Generate Reply & Stream Ladder Chunks
+        self.append_log(f"[AI GENERATING] Responding to @{sender_title}...")
         reply_full = await self.ai.generate_reply(sender_title, text, style=self.cfg.style)
         chunks = self.emulator.chunk_text(reply_full, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
         
@@ -453,7 +476,7 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.tg.target_username = self.cfg.target_username
             self.tg.target_id = self.cfg.target_id
             self.btn_run.configure(text="■ STOP ENGINE", fg_color=ERROR)
-            self.append_log(f"[ENGINE] Running on {self.cfg.selected_chat_title} @ {self.cfg.wpm_rate} WPM (DeepSeek backend)")
+            self.append_log(f"[ENGINE] Running on {self.cfg.selected_chat_title} @ {self.cfg.wpm_rate} WPM")
         else:
             self.tg.is_running = False
             self.btn_run.configure(text="▶ START ENGINE", fg_color=MAIN)
