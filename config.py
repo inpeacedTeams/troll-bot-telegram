@@ -25,9 +25,9 @@ class AppConfig:
     selected_chat_title: str = ""
     
     wpm_rate: int = 380
-    ladder_pause: float = 0.25
+    ladder_pause: float = 0.08       # Сверхбыстрая пулеметная пауза между обрывками (80 мс)
     min_chunk_words: int = 1
-    max_chunk_words: int = 2
+    max_chunk_words: int = 3
     style: str = "aggressive"
     parallel_typing: bool = True
     reflex_123: bool = True

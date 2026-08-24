@@ -18,6 +18,10 @@ class TelegramHandler:
         self.active_chat_id: Optional[int] = None
         self.is_running = False
         
+        # Lock to prevent overlapping responses and message interleaving
+        self.is_sending_lock = asyncio.Lock()
+        self.current_stream_task: Optional[asyncio.Task] = None
+        
         self.on_message_callback: Optional[Callable] = None
         self.on_typing_callback: Optional[Callable] = None
         self.on_log_callback: Optional[Callable] = None
@@ -96,13 +100,14 @@ class TelegramHandler:
                 return
             if event.chat_id != self.active_chat_id:
                 return
+            if event.out:  # Игнорировать свои собственные исходящие сообщения!
+                return
 
             sender = await event.get_sender()
             sender_id = event.sender_id
             username = (getattr(sender, 'username', '') or '').lower().replace('@', '')
             first_name = (getattr(sender, 'first_name', '') or '').lower()
             
-            # Проверка соответствия таргету (по ID, по username, по имени)
             is_target = False
             if self.target_id and sender_id == self.target_id:
                 is_target = True
@@ -114,28 +119,32 @@ class TelegramHandler:
                     is_target = True
 
             if self.on_message_callback:
+                # Если бот прямо сейчас уже поливает чат пастой, не запускаем дублирующие параллельные потоки
+                if self.is_sending_lock.locked():
+                    self.log(f"[QUEUED/DROPPED] Already actively responding, ignoring parallel spawn from @{username}")
+                    return
+
                 await self.on_message_callback(event, is_target, sender)
 
-        @self.client.on(events.UserUpdate)
-        async def user_typing_handler(event):
-            if not self.is_running or not self.active_chat_id:
-                return
-            if event.typing and self.on_typing_callback:
-                if (self.target_id and event.user_id == self.target_id):
-                    await self.on_typing_callback(event.user_id)
-
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator):
-        for idx, chunk in enumerate(chunks):
-            if not self.is_running:
-                break
-            try:
-                async with self.client.action(chat_id, 'typing'):
-                    await emulator.sleep_wpm(chunk, wpm)
+        async with self.is_sending_lock:
+            # Запускаем фоновый typing action один раз, а не на каждое микросообщение
+            for idx, chunk in enumerate(chunks):
+                if not self.is_running:
+                    break
+                try:
+                    # Быстрый расчет WPM паузы (без лишних оверхедов)
+                    delay = emulator.calculate_typing_delay(chunk, wpm)
+                    if delay > 0.05:
+                        await asyncio.sleep(delay)
+
                     await self.client.send_message(chat_id, chunk)
                     self.log(f"[SENT #{idx+1}] {chunk}")
-                await asyncio.sleep(ladder_pause)
-            except FloodWaitError as fwe:
-                self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
-                await asyncio.sleep(fwe.seconds)
-            except Exception as e:
-                self.log(f"[ERROR SENDING] {e}", level="ERROR")
+
+                    if ladder_pause > 0.02:
+                        await asyncio.sleep(ladder_pause)
+                except FloodWaitError as fwe:
+                    self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
+                    await asyncio.sleep(fwe.seconds)
+                except Exception as e:
+                    self.log(f"[ERROR SENDING] {e}", level="ERROR")
