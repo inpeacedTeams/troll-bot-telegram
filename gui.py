@@ -53,7 +53,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v2.9")
+        self.title("trolltype // DeepSeek Edition v3.0")
         self.geometry("1080x760")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -70,6 +70,7 @@ class TrollTypeDesktopApp(ctk.CTk):
 
         self.target_mode_all = False
         self.current_tab = None
+        self.current_typo_rate = 0.08  # Аккуратные 8% опечаток
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_async_loop, daemon=True)
         self.thread.start()
@@ -91,7 +92,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="powered by FreeDeepseekAPI", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.0 realistic chatter", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -291,15 +292,14 @@ class TrollTypeDesktopApp(ctk.CTk):
         btn_set_target = ctk.CTkButton(side, text="Set Target", fg_color=BG, text_color=TEXT, height=32, corner_radius=6, command=self._set_manual_target)
         btn_set_target.pack(fill="x", padx=14, pady=4)
 
-        # Typo Rate Slider
-        lbl_typo = ctk.CTkLabel(side, text=f"ПРОЦЕНТ ОПЕЧАТОК: {int(self.cfg.ladder_pause * 100)}%", font=("JetBrains Mono", 11), text_color=SUB)
+        # Typo Rate Slider (default 8%)
+        lbl_typo = ctk.CTkLabel(side, text="ПРОЦЕНТ ОПЕЧАТОК: 8%", font=("JetBrains Mono", 11), text_color=SUB)
         lbl_typo.pack(pady=(10, 2))
         self.lbl_typo_val = lbl_typo
 
-        self.typo_slider = ctk.CTkSlider(side, from_=0, to=40, number_of_steps=40, progress_color=MAIN, command=self._on_typo_slide)
-        self.typo_slider.set(18)
+        self.typo_slider = ctk.CTkSlider(side, from_=0, to=30, number_of_steps=30, progress_color=MAIN, command=self._on_typo_slide)
+        self.typo_slider.set(8)
         self.typo_slider.pack(fill="x", padx=14, pady=2)
-        self.current_typo_rate = 0.18
 
         lbl_style = ctk.CTkLabel(side, text="STYLE MODE", font=("JetBrains Mono", 11), text_color=SUB)
         lbl_style.pack(pady=(10, 2))
@@ -512,9 +512,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.append_log(f"[AI GENERATING] Triggered response on '{text[:25]}'...")
         reply_full = await self.ai.generate_reply(sender_title, text, style=self.cfg.style)
         
-        # Накладываем реалистичные опечатки (миссклики, свапы, даблклики)
         reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
-        
         chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
         
         await self.tg.send_ladder_chunks(

@@ -2,43 +2,49 @@ import random
 from typing import List
 
 NEARBY_KEYS_RU = {
-    'й': ['ц', 'ф', 'ы', '1', '2'],
-    'ц': ['й', 'у', 'ы', 'в', '2', '3'],
-    'у': ['ц', 'к', 'в', 'а', '3', '4'],
-    'к': ['у', 'е', 'а', 'п', '4', '5'],
-    'е': ['к', 'н', 'п', 'р', '5', '6'],
-    'н': ['е', 'г', 'р', 'о', '6', '7'],
-    'г': ['н', 'ш', 'о', 'л', '7', '8'],
-    'ш': ['г', 'щ', 'л', 'д', '8', '9'],
-    'щ': ['ш', 'з', 'д', 'ж', '9', '0'],
-    'з': ['щ', 'х', 'ж', 'э', '0', '-'],
+    'й': ['ц', 'ф', 'ы'],
+    'ц': ['й', 'у', 'ы', 'в'],
+    'у': ['ц', 'к', 'в', 'а'],
+    'к': ['у', 'е', 'а', 'п'],
+    'е': ['к', 'н', 'п', 'р'],
+    'н': ['е', 'г', 'р', 'о'],
+    'г': ['н', 'ш', 'о', 'л'],
+    'ш': ['г', 'щ', 'л', 'д'],
+    'щ': ['ш', 'з', 'д', 'ж'],
+    'з': ['щ', 'х', 'ж', 'э'],
     'х': ['з', 'ъ', 'э'],
-    'ъ': ['х', 'ж', 'э'],
     'ф': ['й', 'ы', 'я'],
-    'ы': ['ф', 'в', 'я', 'ч', 'ц'],
-    'в': ['ы', 'а', 'ч', 'с', 'у', 'ц'],
-    'а': ['в', 'п', 'с', 'м', 'к', 'у'],
-    'п': ['а', 'р', 'м', 'и', 'е', 'к'],
-    'р': ['п', 'о', 'и', 'т', 'н', 'е'],
-    'о': ['р', 'л', 'т', 'ь', 'г', 'н'],
-    'л': ['о', 'д', 'ь', 'б', 'ш', 'г'],
-    'д': ['л', 'ж', 'б', 'ю', 'щ', 'ш'],
-    'ж': ['д', 'э', 'ю', 'з', 'щ'],
+    'ы': ['ф', 'в', 'я', 'ч'],
+    'в': ['ы', 'а', 'ч', 'с'],
+    'а': ['в', 'п', 'с', 'м'],
+    'п': ['а', 'р', 'м', 'и'],
+    'р': ['п', 'о', 'и', 'т'],
+    'о': ['р', 'л', 'т', 'ь'],
+    'л': ['о', 'д', 'ь', 'б'],
+    'д': ['л', 'ж', 'б', 'ю'],
+    'ж': ['д', 'э', 'ю', 'з'],
     'э': ['ж', 'х', 'ъ'],
     'я': ['ф', 'ы', 'ч'],
-    'ч': ['я', 'с', 'в', 'ы'],
-    'с': ['ч', 'м', 'а', 'в'],
-    'м': ['с', 'и', 'п', 'а'],
-    'и': ['м', 'т', 'р', 'п'],
-    'т': ['и', 'ь', 'о', 'р'],
-    'ь': ['т', 'б', 'л', 'о'],
-    'б': ['ь', 'ю', 'д', 'л'],
+    'ч': ['я', 'с', 'в'],
+    'с': ['ч', 'м', 'а'],
+    'м': ['с', 'и', 'п'],
+    'и': ['м', 'т', 'р'],
+    'т': ['и', 'ь', 'о'],
+    'ь': ['т', 'б', 'л'],
+    'б': ['ь', 'ю', 'д'],
     'ю': ['б', 'ж', 'д']
 }
 
+# Короткие ключевые слова, которые никогда нельзя портить опечатками для читаемости
+PROTECTED_WORDS = {"хуй", "ебало", "пидор", "нах", "нахуй", "рот", "мать", "бля", "блять", "пес", "че", "ты", "я", "те"}
+
 class TypingEmulator:
     @staticmethod
-    def apply_typos(text: str, typo_rate: float = 0.15) -> str:
+    def apply_typos(text: str, typo_rate: float = 0.07) -> str:
+        """
+        Умеренный реалистичный процент опечаток (6-9%). 
+        Короткие маты остаются разборчивыми, опечатки происходят только в длинных словах.
+        """
         if typo_rate <= 0:
             return text
 
@@ -46,7 +52,9 @@ class TypingEmulator:
         result_words = []
 
         for word in words:
-            if any(ch.isdigit() for ch in word) or len(word) <= 2:
+            clean_w = word.lower().strip()
+            # Защита коротких матов и спецсимволов от превращения в кашу
+            if clean_w in PROTECTED_WORDS or len(word) <= 3 or any(ch.isdigit() for ch in word):
                 result_words.append(word)
                 continue
 
@@ -58,19 +66,16 @@ class TypingEmulator:
                 lower_char = char.lower()
 
                 if random.random() < typo_rate:
-                    typo_type = random.choice(["neighbor", "skip", "swap", "double"])
+                    typo_type = random.choice(["neighbor", "skip", "swap"])
                     if typo_type == "neighbor" and lower_char in NEARBY_KEYS_RU:
                         sub = random.choice(NEARBY_KEYS_RU[lower_char])
                         new_chars.append(sub.upper() if char.isupper() else sub)
-                    elif typo_type == "skip" and len(chars) > 3:
+                    elif typo_type == "skip" and len(chars) > 4:
                         pass
                     elif typo_type == "swap" and i + 1 < len(chars):
                         new_chars.append(chars[i+1])
                         new_chars.append(char)
                         i += 1
-                    elif typo_type == "double":
-                        new_chars.append(char)
-                        new_chars.append(char)
                     else:
                         new_chars.append(char)
                 else:
@@ -83,9 +88,6 @@ class TypingEmulator:
 
     @staticmethod
     def chunk_text(text: str, min_words: int = 2, max_words: int = 4) -> List[str]:
-        """
-        Разбивает текст на плотные обрывки по 2-4 слова, чтобы залп укладывался в 6-10 сообщений.
-        """
         words = text.split()
         chunks = []
         current = []
