@@ -54,7 +54,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v2.7")
+        self.title("trolltype // DeepSeek Edition v2.8")
         self.geometry("1080x760")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -178,33 +178,46 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.tab_deepseek = ctk.CTkFrame(self.container, fg_color=SUB_ALT, corner_radius=10)
         
         lbl = ctk.CTkLabel(self.tab_deepseek, text="FreeDeepseekAPI Endpoint Settings", font=("JetBrains Mono", 18, "bold"), text_color=MAIN)
-        lbl.pack(pady=20)
+        lbl.pack(pady=16)
 
-        sub_lbl = ctk.CTkLabel(self.tab_deepseek, text="Если сервер на том же компьютере — используй http://127.0.0.1:8000/v1 (или твой порт)", font=("JetBrains Mono", 12), text_color=SUB)
+        sub_lbl = ctk.CTkLabel(self.tab_deepseek, text="Укажи адрес сервера FreeDeepseekAPI (например http://127.0.0.1:8000/v1 или http://localhost:9655/v1)", font=("JetBrains Mono", 11), text_color=SUB)
         sub_lbl.pack(pady=(0, 10))
 
-        self.ent_ds_url = ctk.CTkEntry(self.tab_deepseek, placeholder_text="http://127.0.0.1:8000/v1", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
-        self.ent_ds_url.pack(pady=8)
+        self.ent_ds_url = ctk.CTkEntry(self.tab_deepseek, placeholder_text="http://127.0.0.1:8000/v1", width=420, height=38, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_ds_url.pack(pady=6)
         self.ent_ds_url.insert(0, self.cfg.deepseek_base_url)
 
-        self.ent_ds_key = ctk.CTkEntry(self.tab_deepseek, placeholder_text="API Key (default: free-deepseek-api)", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
-        self.ent_ds_key.pack(pady=8)
+        self.ent_ds_key = ctk.CTkEntry(self.tab_deepseek, placeholder_text="API Key (default: free-deepseek-api)", width=420, height=38, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_ds_key.pack(pady=6)
         self.ent_ds_key.insert(0, self.cfg.deepseek_api_key)
 
-        self.ent_ds_model = ctk.CTkEntry(self.tab_deepseek, placeholder_text="Model (e.g. deepseek-chat)", width=420, height=40, corner_radius=8, fg_color=BG, text_color=TEXT)
-        self.ent_ds_model.pack(pady=8)
+        self.ent_ds_model = ctk.CTkEntry(self.tab_deepseek, placeholder_text="Model (e.g. deepseek-chat)", width=420, height=38, corner_radius=8, fg_color=BG, text_color=TEXT)
+        self.ent_ds_model.pack(pady=6)
         self.ent_ds_model.insert(0, self.cfg.deepseek_model)
 
-        btn_test_ds = ctk.CTkButton(self.tab_deepseek, text="⚡ Проверить подключение к DeepSeek", fg_color=BG, text_color=MAIN, width=420, height=36, corner_radius=8, font=("JetBrains Mono", 12, "bold"),
+        # Action buttons row
+        btn_row = ctk.CTkFrame(self.tab_deepseek, fg_color="transparent")
+        btn_row.pack(pady=6)
+
+        btn_test_ds = ctk.CTkButton(btn_row, text="⚡ Тест подключения", fg_color=BG, text_color=MAIN, width=205, height=36, corner_radius=8, font=("JetBrains Mono", 12, "bold"),
                                     command=lambda: self.async_call(self._test_deepseek_connection()))
-        btn_test_ds.pack(pady=6)
+        btn_test_ds.pack(side="left", padx=4)
+
+        btn_new_chat = ctk.CTkButton(btn_row, text="🔄 Создать новый чистый чат", fg_color=BG, text_color=TEXT, width=205, height=36, corner_radius=8, font=("JetBrains Mono", 12),
+                                     command=self._reset_ai_chat)
+        btn_new_chat.pack(side="left", padx=4)
 
         self.lbl_ds_test = ctk.CTkLabel(self.tab_deepseek, text="", font=("JetBrains Mono", 11), text_color=MAIN)
         self.lbl_ds_test.pack(pady=2)
 
-        btn_save_ds = ctk.CTkButton(self.tab_deepseek, text="Save DeepSeek Settings", fg_color=MAIN, text_color=BG, width=420, height=40, corner_radius=8, font=("JetBrains Mono", 13, "bold"),
+        btn_save_ds = ctk.CTkButton(self.tab_deepseek, text="Сохранить настройки DeepSeek", fg_color=MAIN, text_color=BG, width=420, height=40, corner_radius=8, font=("JetBrains Mono", 13, "bold"),
                                     command=self._save_deepseek_settings)
         btn_save_ds.pack(pady=10)
+
+    def _reset_ai_chat(self):
+        self.ai.reset_session()
+        self.lbl_ds_test.configure(text=f"✅ Контекст сброшен! Создана новая чистая сессия: {self.ai.session_id[:8]}", text_color=MAIN)
+        self.append_log(f"[DEEPSEEK] Started fresh chat session: {self.ai.session_id}")
 
     async def _test_deepseek_connection(self):
         url = self.ent_ds_url.get().strip()
@@ -215,10 +228,10 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.after(0, lambda: self.lbl_ds_test.configure(text="⏳ Отправка тестового запроса...", text_color=MAIN))
         res = await self.ai.generate_reply("test_user", "привет")
         if res and not res.startswith("иди нахуй завали"):
-            self.after(0, lambda: self.lbl_ds_test.configure(text="✅ Успешно! DeepSeek генерирует живой ответ.", text_color=MAIN))
+            self.after(0, lambda: self.lbl_ds_test.configure(text="✅ Успешно! DeepSeek подключен и генерирует живой ответ.", text_color=MAIN))
             self.append_log(f"[DEEPSEEK TEST OK] Response: {res[:60]}...")
         else:
-            self.after(0, lambda: self.lbl_ds_test.configure(text=f"❌ Ошибка подключения к {url}! Проверь запущен ли сервер.", text_color=ERROR))
+            self.after(0, lambda: self.lbl_ds_test.configure(text=f"❌ Ошибка подключения к {url}! Проверь адрес и запущен ли сервер.", text_color=ERROR))
             self.append_log(f"[DEEPSEEK TEST FAILED] Cannot reach {url}", level="ERROR")
 
     def _init_target_tab(self):
@@ -429,7 +442,6 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.append_log(f"[AUTH SIGN-IN ERROR] {e}", level="ERROR")
 
     def _load_dialogs_sync(self, dialogs):
-        # Clean up children on main GUI thread safely
         for w in list(self.chat_list_box.winfo_children()):
             try:
                 w.destroy()
