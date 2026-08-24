@@ -54,7 +54,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.2")
+        self.title("trolltype // DeepSeek Edition v3.3")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -96,7 +96,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.2 2s auto-provoke & reply stream", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.3 2s auto-provoke & reply stream", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -547,14 +547,13 @@ class TrollTypeDesktopApp(ctk.CTk):
         # 1. Запускаем параллельную генерацию в DeepSeek
         ai_task = asyncio.create_task(self.ai.generate_reply(sender_title, text, style=self.cfg.style))
 
-        # 2. Пока DeepSeek думает, непрерывно отправляем филлер-залп, не давая затихнуть троллингу
+        # 2. Пока DeepSeek думает, отправляем филлер-залп
         filler = self.ai.get_instant_filler()
         filler_typos = self.emulator.apply_typos(filler, typo_rate=self.current_typo_rate)
         filler_chunks = self.emulator.chunk_text(filler_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
 
         mention_tag = self.cfg.target_username if not self.target_mode_all else sender_title
         
-        # Запускаем филлер на 2-3 чанка
         filler_stream = asyncio.create_task(
             self.tg.send_ladder_chunks(
                 chat_id=event.chat_id,
@@ -572,7 +571,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         except Exception:
             pass
 
-        # 3. Как только DeepSeek ответ готов — отправляем его через reply_to на сообщение таргета!
+        # 3. Отправляем готовый ответ через reply_to
         reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
         chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
 
@@ -593,12 +592,10 @@ class TrollTypeDesktopApp(ctk.CTk):
                 if not self.tg.is_running or not self.auto_bait_running or not self.tg.active_chat_id:
                     break
                 
-                # Если с последнего сообщения таргета прошло более 2.5 секунд
                 silence_duration = time.time() - self.tg.last_target_msg_time
                 if silence_duration >= 2.5:
                     target_name = self.cfg.target_username or "жертва"
                     
-                    # Берем сочную провокацию на молчание
                     provoke_text = self.ai.get_silence_provoke()
                     provoke_with_typos = self.emulator.apply_typos(provoke_text, typo_rate=self.current_typo_rate)
                     chunks = self.emulator.chunk_text(provoke_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
@@ -612,12 +609,12 @@ class TrollTypeDesktopApp(ctk.CTk):
                         emulator=self.emulator,
                         target_mention=self.cfg.target_username
                     )
-                    # Сдвигаем таймер, чтобы следующий залп шел через 2.5с
                     self.tg.last_target_msg_time = time.time()
 
         if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():
             self.tg.auto_bait_task.cancel()
-        self.tg.auto_bait_task = asyncio.create_task(_bait_worker())
+        # Запускаем таск через async_call в основном event loop
+        self.tg.auto_bait_task = self.async_call(_bait_worker())
 
     def toggle_engine(self):
         if not self.tg.is_running:
