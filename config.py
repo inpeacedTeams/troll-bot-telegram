@@ -25,9 +25,9 @@ class AppConfig:
     selected_chat_title: str = ""
     
     wpm_rate: int = 380
-    ladder_pause: float = 0.4
+    ladder_pause: float = 0.25
     min_chunk_words: int = 1
-    max_chunk_words: int = 3
+    max_chunk_words: int = 2
     style: str = "aggressive"
     parallel_typing: bool = True
     reflex_123: bool = True

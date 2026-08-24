@@ -4,9 +4,9 @@ from typing import List
 
 class TypingEmulator:
     @staticmethod
-    def chunk_text(text: str, min_words: int = 1, max_words: int = 3) -> List[str]:
+    def chunk_text(text: str, min_words: int = 1, max_words: int = 2) -> List[str]:
         """
-        Разбивает длинный текст строго лесенкой по 1-3 слова в сообщении.
+        Разбивает текст на агрессивные короткие обрывки по 1-2 слова для пулеметной лесенки.
         """
         words = text.split()
         chunks = []
@@ -26,7 +26,7 @@ class TypingEmulator:
     def calculate_typing_delay(chunk: str, wpm: int = 380) -> float:
         words_count = len(chunk.split())
         delay = (words_count / max(wpm, 30)) * 60.0
-        return max(0.1, delay)
+        return max(0.08, delay)
 
     @staticmethod
     async def sleep_wpm(chunk: str, wpm: int = 380):
