@@ -3,6 +3,7 @@ import os
 import asyncio
 import threading
 import time
+from collections import deque
 import customtkinter as ctk
 from datetime import datetime
 
@@ -54,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.4")
+        self.title("trolltype // DeepSeek Edition v3.5")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -74,6 +75,10 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.current_tab = None
         self.current_typo_rate = 0.06
         self.auto_bait_running = True
+        
+        # Debounce & batching очередей таргета
+        self.target_message_buffer = deque()
+        self.is_processing_ai = False
         
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_async_loop, daemon=True)
@@ -96,7 +101,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.4 single stream & template master", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.5 debounced reaction master", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -292,7 +297,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         btn_set_target = ctk.CTkButton(side, text="Set Target", fg_color=BG, text_color=TEXT, height=30, corner_radius=6, command=self._set_manual_target)
         btn_set_target.pack(fill="x", padx=14, pady=2)
 
-        self.chk_auto_bait = ctk.CTkCheckBox(side, text="Авто-нападение (>2 сек тишины)", font=("JetBrains Mono", 11), text_color=TEXT,
+        self.chk_auto_bait = ctk.CTkCheckBox(side, text="Авто-нападение (>3 сек тишины)", font=("JetBrains Mono", 11), text_color=TEXT,
                                              fg_color=MAIN, hover_color=MAIN, command=self._toggle_auto_bait)
         self.chk_auto_bait.pack(pady=4)
         self.chk_auto_bait.select()
@@ -344,7 +349,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.auto_bait_enabled = self.auto_bait_running
         self.cfg.save()
         if self.auto_bait_running:
-            self.append_log("[AUTO-BAIT] Enabled: 2.5s silence triggers continuous provoke.")
+            self.append_log("[AUTO-BAIT] Enabled: 3.5s silence triggers continuous provoke.")
             if self.tg.is_running:
                 self._start_auto_bait_loop()
         else:
@@ -354,6 +359,7 @@ class TrollTypeDesktopApp(ctk.CTk):
 
     def _toggle_target_all(self):
         self.target_mode_all = bool(self.chk_target_all.get())
+        self.tg.target_mode_all = self.target_mode_all
         if self.target_mode_all:
             self.lbl_active_target.configure(text="ALL USERS (ВЕСЬ ЧАТ)")
             self.append_log("[MODE] Target mode: TROLL EVERYONE IN CHAT")
@@ -537,30 +543,46 @@ class TrollTypeDesktopApp(ctk.CTk):
         sender_title = getattr(sender, 'username', '') or getattr(sender, 'first_name', 'Unknown')
         text = event.text or ""
         
-        should_respond = is_target or self.target_mode_all
-        status_tag = "TARGET" if is_target else ("ALL-MODE" if self.target_mode_all else "USER (SKIPPED)")
-        self.append_log(f"[{status_tag} @{sender_title}] {text}")
+        self.append_log(f"[TARGET @{sender_title}] {text}")
+        self.target_message_buffer.append({"text": text, "msg_id": event.id, "time": time.time()})
 
-        if not should_respond:
+        # Если уже идет генерация DeepSeek — не прерываем её, новый запрос подхватит все накопившиеся реплики таргета!
+        if self.is_processing_ai:
             return
 
-        # Генерируем точный ответ через DeepSeek без запуска параллельных фоновых очередей
-        self.append_log(f"[AI GENERATING] Triggered reaction on '{text[:25]}'...")
-        reply_full = await self.ai.generate_reply(sender_title, text, style=self.cfg.style)
+        self.is_processing_ai = True
+        try:
+            # Небольшой debounce (0.3с), чтобы объединить быстрые очереди таргета
+            await asyncio.sleep(0.3)
+            
+            combined_texts = []
+            last_msg_id = event.id
+            while self.target_message_buffer:
+                item = self.target_message_buffer.popleft()
+                combined_texts.append(item["text"])
+                last_msg_id = item["msg_id"]
 
-        reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
-        chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
+            aggregated_prompt = " ".join(combined_texts).strip()
+            self.append_log(f"[AI GENERATING REACTION] on: '{aggregated_prompt[:40]}'...")
+            
+            reply_full = await self.ai.generate_reply(sender_title, aggregated_prompt, style=self.cfg.style)
+            self.append_log(f"[AI READY] {reply_full[:50]}...")
 
-        mention_tag = self.cfg.target_username if not self.target_mode_all else sender_title
-        await self.tg.send_ladder_chunks(
-            chat_id=event.chat_id,
-            chunks=chunks,
-            ladder_pause=self.cfg.ladder_pause,
-            wpm=self.cfg.wpm_rate,
-            emulator=self.emulator,
-            target_mention=mention_tag,
-            reply_to_msg_id=event.id
-        )
+            reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
+            chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
+
+            mention_tag = self.cfg.target_username if not self.target_mode_all else sender_title
+            await self.tg.send_ladder_chunks(
+                chat_id=event.chat_id,
+                chunks=chunks,
+                ladder_pause=self.cfg.ladder_pause,
+                wpm=self.cfg.wpm_rate,
+                emulator=self.emulator,
+                target_mention=mention_tag,
+                reply_to_msg_id=last_msg_id
+            )
+        finally:
+            self.is_processing_ai = False
 
     def _start_auto_bait_loop(self):
         async def _bait_worker():
@@ -569,19 +591,18 @@ class TrollTypeDesktopApp(ctk.CTk):
                 if not self.tg.is_running or not self.auto_bait_running or not self.tg.active_chat_id:
                     break
                 
-                # Не запускать авто-нападение, если прямо сейчас бот уже отправляет ответ!
-                if self.tg.is_actively_sending:
+                if self.tg.is_actively_sending or self.is_processing_ai:
                     continue
 
                 silence_duration = time.time() - self.tg.last_target_msg_time
-                if silence_duration >= 2.5:
+                if silence_duration >= 3.2:
                     target_name = self.cfg.target_username or "жертва"
                     
                     provoke_text = self.ai.get_silence_provoke()
                     provoke_with_typos = self.emulator.apply_typos(provoke_text, typo_rate=self.current_typo_rate)
                     chunks = self.emulator.chunk_text(provoke_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
                     
-                    self.append_log(f"[AUTO-PROVOKE] Silence {silence_duration:.1f}s -> firing single stream burst...")
+                    self.append_log(f"[AUTO-PROVOKE] Target silent for {silence_duration:.1f}s -> firing burst...")
                     await self.tg.send_ladder_chunks(
                         chat_id=self.tg.active_chat_id,
                         chunks=chunks,

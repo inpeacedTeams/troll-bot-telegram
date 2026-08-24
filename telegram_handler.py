@@ -125,21 +125,21 @@ class TelegramHandler:
                 elif first_name and target_clean in first_name:
                     is_target = True
 
+            # КРИТИЧЕСКИЙ ФИКС: сообщения от посторонних юзеров НЕ ДОЛЖНЫ трогать текущий стрим!
+            if not is_target and not getattr(self, 'target_mode_all', False):
+                self.log(f"[USER (SKIPPED)] @{username or first_name}] {event.text or ''}")
+                return
+
             if is_target:
                 self.last_target_msg_time = time.time()
 
             if self.on_message_callback:
-                if self.current_stream_task and not self.current_stream_task.done():
-                    self.current_stream_task.cancel()
-                    self.log(f"[CANCEL OLD STREAM] Target spoke (@{username}), switching to reaction!")
-
-                self.current_stream_task = asyncio.create_task(self.on_message_callback(event, is_target, sender))
+                asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
         async with self.send_lock:
             self.is_actively_sending = True
-            # Отправляем весь массив сообщений без раннего обрезания (до 100+ чанков)
-            active_chunks = chunks[:120]
+            active_chunks = chunks[:35]
             
             if active_chunks and target_mention:
                 clean_tag = target_mention.strip()
@@ -154,8 +154,7 @@ class TelegramHandler:
                     if not self.is_running:
                         break
                     
-                    # Плавная быстрая пауза (0.35-0.45с) для непрерывного пулеметного троллинга
-                    await asyncio.sleep(max(0.38, ladder_pause))
+                    await asyncio.sleep(max(0.40, ladder_pause))
                     
                     if idx == 0 and reply_to_msg_id:
                         await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
@@ -166,7 +165,7 @@ class TelegramHandler:
                     self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
             except asyncio.CancelledError:
-                self.log("[STREAM INTERRUPTED] Cancelled cleanly to start new reaction.")
+                self.log("[STREAM INTERRUPTED]")
             except FloodWaitError as fwe:
                 self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
                 await asyncio.sleep(fwe.seconds + 1)
