@@ -99,17 +99,18 @@ class DeepSeekAIEngine:
             {"role": "user", "content": prompt_user}
         ]
         
+        # FreeDeepseekAPI / Ollama часто падают от frequency/presence penalties, убираем их
         payload = {
             "model": self.model,
-            "user": f"user_{self.session_id}",
             "messages": messages,
-            "max_tokens": 80,
-            "temperature": 1.35,
+            "max_tokens": 120,
+            "temperature": 1.1,
             "stream": False
         }
 
         try:
-            timeout = aiohttp.ClientTimeout(total=3.5)
+            logger.info(f"[DEEPSEEK REQ] POST {endpoint} on silence...")
+            timeout = aiohttp.ClientTimeout(total=15)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(endpoint, headers=headers, json=payload) as resp:
                     if resp.status == 200:
@@ -120,9 +121,13 @@ class DeepSeekAIEngine:
                         reply = reply.replace("таргет", "").replace("Таргет", "").strip()
                         if len(reply.split()) >= 3:
                             self.recent_replies.append(reply[:20])
+                            logger.info(f"[DEEPSEEK SUCCESS PROVOKE] {reply}")
                             return reply
-        except Exception:
-            pass
+                    else:
+                        err_body = await resp.text()
+                        logger.error(f"[DEEPSEEK HTTP ERROR {resp.status}] Body: {err_body}")
+        except Exception as e:
+            logger.error(f"[DEEPSEEK SILENCE ERROR] {e}")
 
         return self.get_silence_provoke()
 
@@ -163,18 +168,15 @@ class DeepSeekAIEngine:
         
         payload = {
             "model": self.model,
-            "user": f"user_{self.session_id}",
             "messages": messages,
-            "max_tokens": 90,
-            "temperature": 1.35,
-            "frequency_penalty": 0.8,
-            "presence_penalty": 0.8,
+            "max_tokens": 120,
+            "temperature": 1.1,
             "stream": False
         }
 
         try:
-            logger.info(f"[DEEPSEEK] Generating authentic fast-typer response on: '{text_clean[:25]}'...")
-            timeout = aiohttp.ClientTimeout(total=4)
+            logger.info(f"[DEEPSEEK REQ] POST {endpoint} payload for '{text_clean[:25]}'...")
+            timeout = aiohttp.ClientTimeout(total=15)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(endpoint, headers=headers, json=payload) as resp:
                     if resp.status == 200:
@@ -188,14 +190,17 @@ class DeepSeekAIEngine:
                             reply = reply.replace(bw, "")
                         
                         reply = reply.strip()
-                        if len(reply.split()) >= 4:
+                        if len(reply.split()) >= 3:
                             self.recent_replies.append(reply[:20])
-                            logger.info(f"[DEEPSEEK SUCCESS] {reply}")
+                            logger.info(f"[DEEPSEEK SUCCESS REPLY] {reply}")
                             return reply
+                    else:
+                        err_body = await resp.text()
+                        logger.error(f"[DEEPSEEK HTTP ERROR {resp.status}] Body: {err_body}")
         except Exception as e:
-            logger.error(f"[DEEPSEEK TIMEOUT/ERROR] {e}")
+            logger.error(f"[DEEPSEEK REQ FAILED] {e}")
 
-        # Динамические вариации из нового вайба
+        # Динамический фоллбэк если локальный сервер упал
         text_lower = text_clean.lower()
         if "123" in text_lower:
             return "123 ты че думаешь я с автотайпером или че мудака кусок блять мать те ебу втопи ебало нахуй пидорас ебаный"

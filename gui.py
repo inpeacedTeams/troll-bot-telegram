@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.9")
+        self.title("trolltype // DeepSeek Edition v4.0 (Robust REST)")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -100,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.9 dynamic anti-repetition", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v4.0 clean payload & full log", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -233,8 +233,8 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.after(0, lambda: self.lbl_ds_test.configure(text="⏳ Отправка тестового запроса...", text_color=MAIN))
         res = await self.ai.generate_reply("test_user", "привет")
         if res:
-            self.after(0, lambda: self.lbl_ds_test.configure(text="✅ Успешно! DeepSeek подключен и генерирует живой ответ.", text_color=MAIN))
-            self.append_log(f"[DEEPSEEK TEST OK] Response: {res[:60]}...")
+            self.after(0, lambda: self.lbl_ds_test.configure(text=f"✅ Ответ получен: {res[:40]}...", text_color=MAIN))
+            self.append_log(f"[DEEPSEEK TEST OK] Response: {res}")
         else:
             self.after(0, lambda: self.lbl_ds_test.configure(text=f"❌ Ошибка подключения к {url}! Проверь адрес и запущен ли сервер.", text_color=ERROR))
             self.append_log(f"[DEEPSEEK TEST FAILED] Cannot reach {url}", level="ERROR")
@@ -348,7 +348,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.auto_bait_enabled = self.auto_bait_running
         self.cfg.save()
         if self.auto_bait_running:
-            self.append_log("[AUTO-BAIT] Enabled: Dynamic silence trigger.")
+            self.append_log("[AUTO-BAIT] Enabled: 3.5s silence triggers continuous provoke.")
             if self.tg.is_running:
                 self._start_auto_bait_loop()
         else:
@@ -587,7 +587,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                     had_silence = True
 
             aggregated_prompt = " ".join(combined_texts).strip()
-            self.append_log(f"[AI GENERATING] Adaptive reaction on '{aggregated_prompt[:35]}'...")
+            self.append_log(f"[AI GENERATING] Triggered on '{aggregated_prompt[:35]}'...")
             
             reply_full = await self.ai.generate_reply(
                 sender_title,
@@ -596,7 +596,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 was_silent_before=had_silence,
                 style=self.cfg.style
             )
-            self.append_log(f"[AI READY] {reply_full[:50]}...")
+            self.append_log(f"[AI GENERATED] {reply_full}")
 
             reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
             chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
@@ -629,12 +629,11 @@ class TrollTypeDesktopApp(ctk.CTk):
                 if silence_duration >= 3.5:
                     target_name = self.cfg.target_username or "жертва"
                     
-                    # Динамическая генерация наезда на молчание через DeepSeek
                     provoke_text = await self.ai.generate_silence_provoke(target_name)
+                    self.append_log(f"[AUTO-PROVOKE GENERATED] {provoke_text}")
                     provoke_with_typos = self.emulator.apply_typos(provoke_text, typo_rate=self.current_typo_rate)
                     chunks = self.emulator.chunk_text(provoke_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
                     
-                    self.append_log(f"[AUTO-PROVOKE] Silence {silence_duration:.1f}s -> firing unique provoke...")
                     await self.tg.send_ladder_chunks(
                         chat_id=self.tg.active_chat_id,
                         chunks=chunks,
