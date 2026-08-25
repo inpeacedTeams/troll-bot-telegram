@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.6")
+        self.title("trolltype // DeepSeek Edition v3.7")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -100,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.6 instant interrupt & anti-repeat", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.7 contextual word-hooking engine", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -542,28 +542,43 @@ class TrollTypeDesktopApp(ctk.CTk):
         sender_title = getattr(sender, 'username', '') or getattr(sender, 'first_name', 'Unknown')
         text = event.text or ""
         
-        self.append_log(f"[TARGET @{sender_title}] {text}")
-        self.target_message_buffer.append({"text": text, "msg_id": event.id, "time": time.time()})
+        # Определяем, ответил ли таргет кому-то другому (reply не нам)
+        is_reply_to_other = False
+        if event.reply_to_msg_id:
+            try:
+                replied_msg = await event.get_reply_message()
+                if replied_msg:
+                    me = await self.tg.client.get_me()
+                    if replied_msg.sender_id != me.id:
+                        is_reply_to_other = True
+            except Exception:
+                pass
+
+        self.append_log(f"[TARGET @{sender_title}] {text} {'[REPLIED TO OTHER]' if is_reply_to_other else ''}")
+        self.target_message_buffer.append({"text": text, "msg_id": event.id, "reply_to_other": is_reply_to_other, "time": time.time()})
 
         if self.is_processing_ai:
             return
 
         self.is_processing_ai = True
         try:
-            # 1. Быстро собираем реплики таргета
             await asyncio.sleep(0.2)
             
             combined_texts = []
             last_msg_id = event.id
+            has_reply_to_other = False
+            
             while self.target_message_buffer:
                 item = self.target_message_buffer.popleft()
                 combined_texts.append(item["text"])
                 last_msg_id = item["msg_id"]
+                if item.get("reply_to_other"):
+                    has_reply_to_other = True
 
             aggregated_prompt = " ".join(combined_texts).strip()
-            self.append_log(f"[AI GENERATING] Triggered reaction on: '{aggregated_prompt[:35]}'...")
+            self.append_log(f"[AI GENERATING] Hooking on '{aggregated_prompt[:35]}'...")
             
-            reply_full = await self.ai.generate_reply(sender_title, aggregated_prompt, style=self.cfg.style)
+            reply_full = await self.ai.generate_reply(sender_title, aggregated_prompt, is_reply_to_other=has_reply_to_other, style=self.cfg.style)
             self.append_log(f"[AI READY] {reply_full[:50]}...")
 
             reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
@@ -571,7 +586,6 @@ class TrollTypeDesktopApp(ctk.CTk):
 
             mention_tag = self.cfg.target_username if not self.target_mode_all else sender_title
             
-            # 2. Мгновенно прерываем старую досылку и запускаем свежий ответ с реплаем
             await self.tg.send_ladder_chunks(
                 chat_id=event.chat_id,
                 chunks=chunks,
