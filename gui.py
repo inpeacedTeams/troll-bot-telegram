@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // Selective Reaction Engine v4.2")
+        self.title("trolltype // Challenge & Mock Engine v4.3")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -100,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v4.2 selective reaction & mandatory triggers", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v4.3 challenge & mocking router", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -556,18 +556,21 @@ class TrollTypeDesktopApp(ctk.CTk):
         silence_gap = time.time() - self.tg.last_target_msg_time
         was_silent_before = silence_gap > 4.0
 
-        # Проверяем фильтром, нужно ли прерывать поток и реагировать именно на эту реплику
-        should_respond_now = self.ai.should_react(text, is_reply_to_other=is_reply_to_other)
+        # Анализируем намерение и тип сообщения
+        intent = self.ai.analyze_message_intent(text, is_reply_to_other=is_reply_to_other)
+        is_challenge = intent["is_challenge"]
+        should_respond_now = intent["should_respond"]
 
-        self.append_log(f"[TARGET @{sender_title}] {text} {'[REACTION DECISION: YES]' if should_respond_now else '[REACTION DECISION: PASS/NON-STOP]'}")
+        tag_status = "[CHALLENGE: 100% REACT]" if is_challenge else ("[MOCK: REACT]" if should_respond_now else "[PASS/NON-STOP]")
+        self.append_log(f"[TARGET @{sender_title}] {text} {tag_status}")
         
         if not should_respond_now:
-            # Если бот решил не прерывать текущий поток ради незначительного слова, просто продолжаем непрерывный спам
             return
 
         self.target_message_buffer.append({
             "text": text,
             "msg_id": event.id,
+            "is_challenge": is_challenge,
             "reply_to_other": is_reply_to_other,
             "was_silent": was_silent_before,
             "time": time.time()
@@ -583,6 +586,7 @@ class TrollTypeDesktopApp(ctk.CTk):
             combined_texts = []
             last_msg_id = event.id
             has_reply_to_other = False
+            has_challenge = False
             had_silence = False
             
             while self.target_message_buffer:
@@ -591,6 +595,8 @@ class TrollTypeDesktopApp(ctk.CTk):
                 last_msg_id = item["msg_id"]
                 if item.get("reply_to_other"):
                     has_reply_to_other = True
+                if item.get("is_challenge"):
+                    has_challenge = True
                 if item.get("was_silent"):
                     had_silence = True
 
@@ -600,6 +606,7 @@ class TrollTypeDesktopApp(ctk.CTk):
             reply_full = await self.ai.generate_reply(
                 sender_title,
                 aggregated_prompt,
+                is_challenge=has_challenge,
                 is_reply_to_other=has_reply_to_other,
                 was_silent_before=had_silence,
                 style=self.cfg.style
