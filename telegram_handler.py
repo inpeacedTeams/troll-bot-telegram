@@ -23,7 +23,6 @@ class TelegramHandler:
         self.mention_every_n: int = 15
         self.last_target_msg_time: float = time.time()
         
-        # Активная таска отправки сообщений (для мгновенной отмены при готовности нового ответа)
         self.active_send_task: Optional[asyncio.Task] = None
         self.auto_bait_task: Optional[asyncio.Task] = None
         
@@ -134,13 +133,14 @@ class TelegramHandler:
                 asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     def cancel_active_stream(self):
-        """Мгновенно прерывает отправку старой очереди, чтобы освободить канал для нового ответа."""
+        """Мгновенно прерывает текущую отправку."""
         if self.active_send_task and not self.active_send_task.done():
             self.active_send_task.cancel()
-            self.log("[INTERRUPT STREAM] Cancelled old queue to deliver fresh reply!")
+            self.log("[PREEMPT] Interrupting current queue to switch to fresh generated response!")
 
     async def execute_send_ladder(self, chat_id: int, chunks: List[str], ladder_pause: float, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
-        active_chunks = chunks[:30]
+        # Ровно ~15 сообщений на пачку
+        active_chunks = chunks[:15]
         
         if active_chunks and target_mention:
             clean_tag = target_mention.strip()
@@ -166,7 +166,7 @@ class TelegramHandler:
                 self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
         except asyncio.CancelledError:
-            self.log("[QUEUE INTERRUPTED] Switched seamlessly to new response.")
+            self.log("[PREEMPT SUCCESS] Switched seamlessly to newly generated reply.")
         except FloodWaitError as fwe:
             self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
             await asyncio.sleep(fwe.seconds + 1)
@@ -177,10 +177,7 @@ class TelegramHandler:
             self.last_target_msg_time = time.time()
 
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
-        # 1. Прерываем предыдущую таску отправки
         self.cancel_active_stream()
-        
-        # 2. Запускаем новую таску отправки
         self.active_send_task = asyncio.create_task(
             self.execute_send_ladder(chat_id, chunks, ladder_pause, target_mention, reply_to_msg_id)
         )

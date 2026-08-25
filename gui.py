@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // Challenge & Mock Engine v4.3")
+        self.title("trolltype // Preemptive 15-Burst Engine v4.4")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -77,7 +77,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.non_stop_running = True
         
         self.target_message_buffer = deque()
-        self.is_processing_ai = False
+        self.is_generating_reaction = False
         
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_async_loop, daemon=True)
@@ -100,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v4.3 challenge & mocking router", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v4.4 15-msg burst with live preemption", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -348,7 +348,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.auto_bait_enabled = self.non_stop_running
         self.cfg.save()
         if self.non_stop_running:
-            self.append_log("[NON-STOP] Enabled: Continuous stream without pauses.")
+            self.append_log("[NON-STOP] Enabled: Continuous 15-msg stream loop.")
             if self.tg.is_running:
                 self._start_continuous_stream_loop()
         else:
@@ -556,12 +556,11 @@ class TrollTypeDesktopApp(ctk.CTk):
         silence_gap = time.time() - self.tg.last_target_msg_time
         was_silent_before = silence_gap > 4.0
 
-        # Анализируем намерение и тип сообщения
         intent = self.ai.analyze_message_intent(text, is_reply_to_other=is_reply_to_other)
         is_challenge = intent["is_challenge"]
         should_respond_now = intent["should_respond"]
 
-        tag_status = "[CHALLENGE: 100% REACT]" if is_challenge else ("[MOCK: REACT]" if should_respond_now else "[PASS/NON-STOP]")
+        tag_status = "[CHALLENGE: REACT]" if is_challenge else ("[MOCK: REACT]" if should_respond_now else "[PASS/CONTINUE]")
         self.append_log(f"[TARGET @{sender_title}] {text} {tag_status}")
         
         if not should_respond_now:
@@ -576,12 +575,15 @@ class TrollTypeDesktopApp(ctk.CTk):
             "time": time.time()
         })
 
-        if self.is_processing_ai:
+        if self.is_generating_reaction:
             return
 
-        self.is_processing_ai = True
+        self.is_generating_reaction = True
         try:
-            await asyncio.sleep(0.15)
+            # КЛЮЧЕВОЙ МОМЕНТ: мы НЕ отменяем текущую очередь отправки прямо сейчас!
+            # Пока DeepSeek думает, бот успевает дослать еще 1-2 сообщения из предыдущих 15.
+            
+            await asyncio.sleep(0.1)
             
             combined_texts = []
             last_msg_id = event.id
@@ -601,8 +603,9 @@ class TrollTypeDesktopApp(ctk.CTk):
                     had_silence = True
 
             aggregated_prompt = " ".join(combined_texts).strip()
-            self.append_log(f"[AI GENERATING] Triggered on '{aggregated_prompt[:35]}'...")
+            self.append_log(f"[AI GENERATING REACTION] on '{aggregated_prompt[:35]}'...")
             
+            # Асинхронно генерируем ответ в DeepSeek
             reply_full = await self.ai.generate_reply(
                 sender_title,
                 aggregated_prompt,
@@ -611,13 +614,14 @@ class TrollTypeDesktopApp(ctk.CTk):
                 was_silent_before=had_silence,
                 style=self.cfg.style
             )
-            self.append_log(f"[AI GENERATED] {reply_full}")
+            self.append_log(f"[AI READY -> PREEMPTING STREAM] {reply_full[:50]}...")
 
             reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
             chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
 
             mention_tag = self.cfg.target_username if not self.target_mode_all else sender_title
             
+            # ТОЛЬКО СЕЙЧАС (когда ответ готов) send_ladder_chunks мгновенно отменяет старую очередь и пускает новую!
             await self.tg.send_ladder_chunks(
                 chat_id=event.chat_id,
                 chunks=chunks,
@@ -628,7 +632,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 reply_to_msg_id=last_msg_id
             )
         finally:
-            self.is_processing_ai = False
+            self.is_generating_reaction = False
 
     def _start_continuous_stream_loop(self):
         async def _continuous_worker():
@@ -637,7 +641,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 if not self.tg.is_running or not self.non_stop_running or not self.tg.active_chat_id:
                     break
                 
-                if self.is_processing_ai or (self.tg.active_send_task and not self.tg.active_send_task.done()):
+                if self.is_generating_reaction or (self.tg.active_send_task and not self.tg.active_send_task.done()):
                     continue
 
                 target_name = self.cfg.target_username or "жертва"
@@ -646,7 +650,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 provoke_with_typos = self.emulator.apply_typos(provoke_text, typo_rate=self.current_typo_rate)
                 chunks = self.emulator.chunk_text(provoke_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
                 
-                self.append_log(f"[NON-STOP STREAM] Continuous burst: {provoke_text[:35]}...")
+                self.append_log(f"[NON-STOP 15-BURST] Sending burst: {provoke_text[:35]}...")
                 await self.tg.send_ladder_chunks(
                     chat_id=self.tg.active_chat_id,
                     chunks=chunks,
