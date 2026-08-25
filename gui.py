@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.7")
+        self.title("trolltype // DeepSeek Edition v3.8")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -100,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.7 contextual word-hooking engine", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.8 adaptive troll behaviors", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -542,7 +542,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         sender_title = getattr(sender, 'username', '') or getattr(sender, 'first_name', 'Unknown')
         text = event.text or ""
         
-        # Определяем, ответил ли таргет кому-то другому (reply не нам)
+        # Проверяем, ответил ли таргет кому-то другому
         is_reply_to_other = False
         if event.reply_to_msg_id:
             try:
@@ -554,8 +554,18 @@ class TrollTypeDesktopApp(ctk.CTk):
             except Exception:
                 pass
 
-        self.append_log(f"[TARGET @{sender_title}] {text} {'[REPLIED TO OTHER]' if is_reply_to_other else ''}")
-        self.target_message_buffer.append({"text": text, "msg_id": event.id, "reply_to_other": is_reply_to_other, "time": time.time()})
+        # Проверяем, молчал ли таргет перед этим
+        silence_gap = time.time() - self.tg.last_target_msg_time
+        was_silent_before = silence_gap > 5.0
+
+        self.append_log(f"[TARGET @{sender_title}] {text} {'[REPLY TO OTHER]' if is_reply_to_other else ''}")
+        self.target_message_buffer.append({
+            "text": text,
+            "msg_id": event.id,
+            "reply_to_other": is_reply_to_other,
+            "was_silent": was_silent_before,
+            "time": time.time()
+        })
 
         if self.is_processing_ai:
             return
@@ -567,6 +577,7 @@ class TrollTypeDesktopApp(ctk.CTk):
             combined_texts = []
             last_msg_id = event.id
             has_reply_to_other = False
+            had_silence = False
             
             while self.target_message_buffer:
                 item = self.target_message_buffer.popleft()
@@ -574,11 +585,19 @@ class TrollTypeDesktopApp(ctk.CTk):
                 last_msg_id = item["msg_id"]
                 if item.get("reply_to_other"):
                     has_reply_to_other = True
+                if item.get("was_silent"):
+                    had_silence = True
 
             aggregated_prompt = " ".join(combined_texts).strip()
-            self.append_log(f"[AI GENERATING] Hooking on '{aggregated_prompt[:35]}'...")
+            self.append_log(f"[AI GENERATING] Adaptive reaction on '{aggregated_prompt[:35]}'...")
             
-            reply_full = await self.ai.generate_reply(sender_title, aggregated_prompt, is_reply_to_other=has_reply_to_other, style=self.cfg.style)
+            reply_full = await self.ai.generate_reply(
+                sender_title,
+                aggregated_prompt,
+                is_reply_to_other=has_reply_to_other,
+                was_silent_before=had_silence,
+                style=self.cfg.style
+            )
             self.append_log(f"[AI READY] {reply_full[:50]}...")
 
             reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
