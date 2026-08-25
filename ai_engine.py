@@ -15,7 +15,8 @@ RYZEN_ZERO_FRAMEWORK = """Запуск системы / Вы только что
 ТВОЙ СТИЛЬ:
 - Короткие злые рубленые фразы.
 - Никаких заумных слов, пословиц и литературщины.
-- На предъявы и провокации (123, читы, автотайпер, бот) — жесткая реакция в лоб.
+- На предъявы и провокации (123, читы, автотайпер, бот, докажи) — жесткая реакция в лоб.
+- РЕАГИРУЙ СТРОГО НА ПОСЛЕДНЕЕ СООБЩЕНИЕ! Если там написано 123 — отвечай ТОЛЬКО на 123, не вспоминай старые фразы.
 
 ОБЪЕМ ГЕНЕРАЦИИ:
 Генерируй длинную плотную пасту ровно на 45-65 слов, чтобы при нарезке по 2-3 слова получалось ДО 20 СООБЩЕНИЙ В ЗАЛПЕ.
@@ -121,13 +122,13 @@ class DeepSeekAIEngine:
         payload = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": 180,
+            "max_tokens": 140,
             "temperature": 1.15,
             "stream": False
         }
 
         try:
-            timeout = aiohttp.ClientTimeout(total=15)
+            timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(endpoint, headers=headers, json=payload) as resp:
                     if resp.status == 200:
@@ -168,11 +169,11 @@ class DeepSeekAIEngine:
         if is_reply_to_other:
             prompt_user = f"Таргет ответил другому человеку в чате: '{text_clean}'. Предъяви ему в точнейшем вайбе тайпера на 45-65 слов (на 18-20 сообщений).{blacklist_context}"
         elif is_challenge:
-            prompt_user = f"Таргет кинул прямую предъяву / вызов / обвинение: '{text_clean}'. Жёстко осади его на 45-65 слов (на 18-20 сообщений):{blacklist_context}"
+            prompt_user = f"Таргет написал строго следующее: '{text_clean}'. Ответь ИМЕННО на эту фразу '{text_clean}', не придумывай и не вспоминай прошлые темы, на 45-65 слов:{blacklist_context}"
         elif was_silent_before:
-            prompt_user = f"Таргет долго молчал и написал: '{text_clean}'. Отреагируй в вайбе тайпера на его ответ на 45-65 слов.{blacklist_context}"
+            prompt_user = f"Таргет долго молчал и написал: '{text_clean}'. Отреагируй именно на '{text_clean}' на 45-65 слов.{blacklist_context}"
         else:
-            prompt_user = f"Таргет написал: '{text_clean}'. Выдай ответ в ТОЧНЕЙШЕМ вайбе на 45-65 слов (на 18-20 сообщений):{blacklist_context}"
+            prompt_user = f"Таргет написал: '{text_clean}'. Выдай ответ именно на '{text_clean}' в ТОЧНЕЙШЕМ вайбе на 45-65 слов:{blacklist_context}"
         
         messages = [
             {"role": "system", "content": SYSTEM_RESET_PROMPT},
@@ -184,14 +185,14 @@ class DeepSeekAIEngine:
         payload = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": 190,
+            "max_tokens": 150,
             "temperature": 1.15,
             "stream": False
         }
 
         try:
-            logger.info(f"[DEEPSEEK REQ] POST {endpoint} on '{text_clean[:25]}' (targeting ~20 msgs)...")
-            timeout = aiohttp.ClientTimeout(total=15)
+            logger.info(f"[DEEPSEEK REQ] POST {endpoint} on '{text_clean[:25]}'...")
+            timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(endpoint, headers=headers, json=payload) as resp:
                     if resp.status == 200:
@@ -205,7 +206,7 @@ class DeepSeekAIEngine:
                             reply = reply.replace(bw, "")
                         
                         reply = reply.strip()
-                        if len(reply.split()) >= 6:
+                        if len(reply.split()) >= 4:
                             self.recent_replies.append(reply[:20])
                             logger.info(f"[DEEPSEEK SUCCESS REPLY] {reply}")
                             return reply
@@ -218,6 +219,8 @@ class DeepSeekAIEngine:
         text_lower = text_clean.lower()
         if "123" in text_lower:
             return "123 ты че думаешь я с автотайпером или че мудака кусок блять мать те ебу втопи ебало нахуй пидорас ебаный соси хуй молча клоун дырявый рот стянул под ноги себе смотри выблядок нищий"
+        if "докажи" in text_lower:
+            return "че тебе доказать клоун дырявый рот закрой нахуй я тебе щас ебыч снесу соси хуй молча пес захарканный под ноги смотри выродок тупой я твою мать ебал"
         if "кому" in text_lower or "ебало" in text_lower:
             return "ВХАВХАХАХ кому ты ебало бить будешь пидорас нахуй я тебе щас просто выебу мать здесь похуй пидорасу ебаному сиди терпи нищий выродок рот закрой нахуй соси молча"
 
