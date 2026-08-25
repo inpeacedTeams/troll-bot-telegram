@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.8")
+        self.title("trolltype // DeepSeek Edition v3.9")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -100,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.8 adaptive troll behaviors", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.9 dynamic anti-repetition", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -348,7 +348,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.auto_bait_enabled = self.auto_bait_running
         self.cfg.save()
         if self.auto_bait_running:
-            self.append_log("[AUTO-BAIT] Enabled: 3.5s silence triggers continuous provoke.")
+            self.append_log("[AUTO-BAIT] Enabled: Dynamic silence trigger.")
             if self.tg.is_running:
                 self._start_auto_bait_loop()
         else:
@@ -542,7 +542,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         sender_title = getattr(sender, 'username', '') or getattr(sender, 'first_name', 'Unknown')
         text = event.text or ""
         
-        # Проверяем, ответил ли таргет кому-то другому
         is_reply_to_other = False
         if event.reply_to_msg_id:
             try:
@@ -554,7 +553,6 @@ class TrollTypeDesktopApp(ctk.CTk):
             except Exception:
                 pass
 
-        # Проверяем, молчал ли таргет перед этим
         silence_gap = time.time() - self.tg.last_target_msg_time
         was_silent_before = silence_gap > 5.0
 
@@ -628,14 +626,15 @@ class TrollTypeDesktopApp(ctk.CTk):
                     continue
 
                 silence_duration = time.time() - self.tg.last_target_msg_time
-                if silence_duration >= 3.2:
+                if silence_duration >= 3.5:
                     target_name = self.cfg.target_username or "жертва"
                     
-                    provoke_text = self.ai.get_silence_provoke()
+                    # Динамическая генерация наезда на молчание через DeepSeek
+                    provoke_text = await self.ai.generate_silence_provoke(target_name)
                     provoke_with_typos = self.emulator.apply_typos(provoke_text, typo_rate=self.current_typo_rate)
                     chunks = self.emulator.chunk_text(provoke_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
                     
-                    self.append_log(f"[AUTO-PROVOKE] Target silent for {silence_duration:.1f}s -> firing burst...")
+                    self.append_log(f"[AUTO-PROVOKE] Silence {silence_duration:.1f}s -> firing unique provoke...")
                     await self.tg.send_ladder_chunks(
                         chat_id=self.tg.active_chat_id,
                         chunks=chunks,
