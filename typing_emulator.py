@@ -81,9 +81,9 @@ class TypingEmulator:
         return " ".join(result_words)
 
     @staticmethod
-    def chunk_text(text: str, min_words: int = 1, max_words: int = 3) -> List[str]:
+    def chunk_text(text: str, min_words: int = 2, max_words: int = 3) -> List[str]:
         """
-        Разбивает текст по 1-3 слова для непрерывной длинной лесенки (30-80 сообщений).
+        Разбивает текст по 2-3 слова, формируя плотную очередь ровно до 18-20 сообщений.
         """
         words = text.split()
         chunks = []

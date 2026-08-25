@@ -133,14 +133,13 @@ class TelegramHandler:
                 asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
     def cancel_active_stream(self):
-        """Мгновенно прерывает текущую отправку."""
         if self.active_send_task and not self.active_send_task.done():
             self.active_send_task.cancel()
             self.log("[PREEMPT] Interrupting current queue to switch to fresh generated response!")
 
     async def execute_send_ladder(self, chat_id: int, chunks: List[str], ladder_pause: float, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
-        # Ровно ~15 сообщений на пачку
-        active_chunks = chunks[:15]
+        # Отправляем до 20 сообщений за один залп
+        active_chunks = chunks[:20]
         
         if active_chunks and target_mention:
             clean_tag = target_mention.strip()
@@ -155,7 +154,7 @@ class TelegramHandler:
                 if not self.is_running:
                     break
                 
-                await asyncio.sleep(max(0.38, ladder_pause))
+                await asyncio.sleep(max(0.35, ladder_pause))
                 
                 if idx == 0 and reply_to_msg_id:
                     await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
