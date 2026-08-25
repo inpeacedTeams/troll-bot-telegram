@@ -48,6 +48,11 @@ DYNAMIC_FALLBACK_BURSTS = [
     "123 ты че думаешь я с автотайпером или че мудака кусок блять мать те ебу втопи ебало нахуй"
 ]
 
+MANDATORY_TRIGGER_KEYWORDS = [
+    "чит", "софт", "бот", "автотайпер", "тайпер", "скрипт", "123", 
+    "автокликер", "софтер", "читы", "пруф", "пруфы", "слит"
+]
+
 class DeepSeekAIEngine:
     def __init__(self, base_url: str = "http://localhost:8000/v1", api_key: str = "free-deepseek-api", model: str = "deepseek-chat"):
         self.base_url = base_url.rstrip("/")
@@ -66,6 +71,25 @@ class DeepSeekAIEngine:
         self.api_key = api_key or "free-deepseek-api"
         self.model = model or "deepseek-chat"
         self.reset_session()
+
+    def should_react(self, text: str, is_reply_to_other: bool = False) -> bool:
+        """
+        Анализирует текст таргета:
+        - Обязательно реактит на читы/123/софт/бота/съезды на других.
+        - Для обычных сообщений реактит выборочно (примерно в 40-50% случаев), чтобы не отвечать на каждую мелкую фразу подряд.
+        """
+        text_lower = text.lower()
+        # Обязательные триггеры
+        if any(kw in text_lower for kw in MANDATORY_TRIGGER_KEYWORDS):
+            return True
+        if is_reply_to_other:
+            return True
+        # Если прислали фото/медиа
+        if "[ photo" in text_lower or "[ media" in text_lower:
+            return True
+        
+        # Для обычных реплик — выборочный реакт (шанс 45%)
+        return random.random() < 0.45
 
     def get_silence_provoke(self) -> str:
         choices = [v for v in DYNAMIC_SILENCE_POOL if v[:20] not in self.recent_replies] or DYNAMIC_SILENCE_POOL
@@ -99,7 +123,6 @@ class DeepSeekAIEngine:
             {"role": "user", "content": prompt_user}
         ]
         
-        # FreeDeepseekAPI / Ollama часто падают от frequency/presence penalties, убираем их
         payload = {
             "model": self.model,
             "messages": messages,
@@ -200,7 +223,6 @@ class DeepSeekAIEngine:
         except Exception as e:
             logger.error(f"[DEEPSEEK REQ FAILED] {e}")
 
-        # Динамический фоллбэк если локальный сервер упал
         text_lower = text_clean.lower()
         if "123" in text_lower:
             return "123 ты че думаешь я с автотайпером или че мудака кусок блять мать те ебу втопи ебало нахуй пидорас ебаный"

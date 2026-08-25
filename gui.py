@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // Continuous Non-Stop Engine v4.1")
+        self.title("trolltype // Selective Reaction Engine v4.2")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -100,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v4.1 non-stop continuous stream", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v4.2 selective reaction & mandatory triggers", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -556,7 +556,15 @@ class TrollTypeDesktopApp(ctk.CTk):
         silence_gap = time.time() - self.tg.last_target_msg_time
         was_silent_before = silence_gap > 4.0
 
-        self.append_log(f"[TARGET @{sender_title}] {text} {'[REPLY TO OTHER]' if is_reply_to_other else ''}")
+        # Проверяем фильтром, нужно ли прерывать поток и реагировать именно на эту реплику
+        should_respond_now = self.ai.should_react(text, is_reply_to_other=is_reply_to_other)
+
+        self.append_log(f"[TARGET @{sender_title}] {text} {'[REACTION DECISION: YES]' if should_respond_now else '[REACTION DECISION: PASS/NON-STOP]'}")
+        
+        if not should_respond_now:
+            # Если бот решил не прерывать текущий поток ради незначительного слова, просто продолжаем непрерывный спам
+            return
+
         self.target_message_buffer.append({
             "text": text,
             "msg_id": event.id,
@@ -618,12 +626,10 @@ class TrollTypeDesktopApp(ctk.CTk):
     def _start_continuous_stream_loop(self):
         async def _continuous_worker():
             while self.tg.is_running and self.non_stop_running:
-                # Минимальный тик цикла (100 мс)
                 await asyncio.sleep(0.1)
                 if not self.tg.is_running or not self.non_stop_running or not self.tg.active_chat_id:
                     break
                 
-                # Если сейчас обрабатывается реакция на входящее сообщение или активно отсылается пачка — ждем
                 if self.is_processing_ai or (self.tg.active_send_task and not self.tg.active_send_task.done()):
                     continue
 
