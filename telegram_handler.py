@@ -109,7 +109,6 @@ class TelegramHandler:
 
             sender_id = event.sender_id
             
-            # Быстрое извлечение имени и юзернейма без блокирующих вызовов
             username = ""
             first_name = ""
             try:
@@ -131,7 +130,6 @@ class TelegramHandler:
                 elif target_clean.isdigit() and int(target_clean) == sender_id:
                     is_target = True
 
-            # Режим "Троллить ВСЕХ"
             if getattr(self, 'target_mode_all', False):
                 is_target = True
 
@@ -139,7 +137,6 @@ class TelegramHandler:
                 self.log(f"[USER (SKIPPED)] @{username or first_name or sender_id}] {event.text or ''}")
                 return
 
-            # Как только пришло сообщение от таргета — мгновенно обновляем время!
             self.last_target_msg_time = time.time()
             if not self.target_id and sender_id:
                 self.target_id = sender_id
@@ -168,7 +165,8 @@ class TelegramHandler:
                 if not self.is_running:
                     break
                 
-                await asyncio.sleep(max(0.35, ladder_pause))
+                # Мгновенная отправка с минимальной задержкой
+                await asyncio.sleep(max(0.08, ladder_pause))
                 
                 if idx == 0 and reply_to_msg_id:
                     await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
@@ -185,7 +183,7 @@ class TelegramHandler:
             await asyncio.sleep(fwe.seconds + 1)
         except Exception as e:
             self.log(f"[SEND ERROR] {e}", level="ERROR")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.2)
         finally:
             self.last_target_msg_time = time.time()
 
