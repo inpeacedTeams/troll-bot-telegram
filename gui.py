@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // Instant React Engine v4.5")
+        self.title("trolltype // Precise Target & React Engine v4.6")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -74,7 +74,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.target_mode_all = False
         self.current_tab = None
         self.current_typo_rate = 0.06
-        self.non_stop_running = True
+        self.auto_bait_running = True
         
         self.current_ai_task: Optional[asyncio.Task] = None
         
@@ -99,7 +99,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v4.5 instant react & zero-lag routing", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v4.6 dynamic target resolution & live react", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -295,7 +295,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         btn_set_target = ctk.CTkButton(side, text="Set Target", fg_color=BG, text_color=TEXT, height=30, corner_radius=6, command=self._set_manual_target)
         btn_set_target.pack(fill="x", padx=14, pady=2)
 
-        self.chk_auto_bait = ctk.CTkCheckBox(side, text="Беспрерывный спам (Non-Stop)", font=("JetBrains Mono", 11), text_color=TEXT,
+        self.chk_auto_bait = ctk.CTkCheckBox(side, text="Авто-нападение (>3 сек тишины)", font=("JetBrains Mono", 11), text_color=TEXT,
                                              fg_color=MAIN, hover_color=MAIN, command=self._toggle_auto_bait)
         self.chk_auto_bait.pack(pady=4)
         self.chk_auto_bait.select()
@@ -343,15 +343,15 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.lbl_typo_val.configure(text=f"ПРОЦЕНТ ОПЕЧАТОК: {int(val)}%")
 
     def _toggle_auto_bait(self):
-        self.non_stop_running = bool(self.chk_auto_bait.get())
-        self.cfg.auto_bait_enabled = self.non_stop_running
+        self.auto_bait_running = bool(self.chk_auto_bait.get())
+        self.cfg.auto_bait_enabled = self.auto_bait_running
         self.cfg.save()
-        if self.non_stop_running:
-            self.append_log("[NON-STOP] Enabled: Continuous 20-msg stream loop.")
+        if self.auto_bait_running:
+            self.append_log("[AUTO-BAIT] Enabled: Will provoke when target is silent for >3.5s.")
             if self.tg.is_running:
-                self._start_continuous_stream_loop()
+                self._start_auto_bait_loop()
         else:
-            self.append_log("[NON-STOP] Disabled.")
+            self.append_log("[AUTO-BAIT] Disabled.")
             if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():
                 self.tg.auto_bait_task.cancel()
 
@@ -429,13 +429,14 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.save()
 
     def _set_manual_target(self):
-        uname = self.ent_target_manual.get().strip().replace('@', '')
-        self.cfg.target_username = uname
-        self.tg.target_username = uname
+        raw_val = self.ent_target_manual.get().strip()
+        self.cfg.target_username = raw_val
+        self.tg.target_username = raw_val
         self.tg.target_id = None
-        self.lbl_active_target.configure(text=f"@{uname}" if uname else "None")
+        self.lbl_active_target.configure(text=raw_val or "None")
         self.cfg.save()
-        self.append_log(f"[TARGET] Manual target set to: @{uname}")
+        self.append_log(f"[TARGET SET] Resolving target: {raw_val}...")
+        self.async_call(self.tg.resolve_target(raw_val))
 
     async def _check_initial_auth(self):
         authed = await self.tg.is_authorized()
@@ -531,7 +532,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.target_username = msg['username'] or msg['sender_name']
         self.tg.target_id = msg['sender_id']
         self.tg.target_username = self.cfg.target_username
-        self.lbl_active_target.configure(text=f"@{self.cfg.target_username}")
+        self.lbl_active_target.configure(text=f"@{self.cfg.target_username}" if self.cfg.target_username else str(self.cfg.target_id))
         self.ent_target_manual.delete(0, "end")
         self.ent_target_manual.insert(0, self.cfg.target_username)
         self.cfg.save()
@@ -565,13 +566,12 @@ class TrollTypeDesktopApp(ctk.CTk):
         if not should_respond_now:
             return
 
-        # Если прямо сейчас идет генерация старого ответа на предыдущее сообщение — мгновенно отменяем его!
         if self.current_ai_task and not self.current_ai_task.done():
             self.current_ai_task.cancel()
-            self.append_log(f"[CANCEL STALE AI TASK] Switching to newest incoming message: '{text}'")
+            self.append_log(f"[SWITCH TO NEW MSG] '{text}'")
 
         async def _process_fresh_target_msg():
-            self.append_log(f"[AI GENERATING REACTION NOW] on latest: '{text}'...")
+            self.append_log(f"[AI GENERATING REACTION] on: '{text}'...")
             
             reply_full = await self.ai.generate_reply(
                 sender_title,
@@ -581,7 +581,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 was_silent_before=was_silent_before,
                 style=self.cfg.style
             )
-            self.append_log(f"[AI READY -> PREEMPTING STREAM] {reply_full[:50]}...")
+            self.append_log(f"[AI READY -> PREEMPT STREAM] {reply_full[:50]}...")
 
             reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
             chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
@@ -600,13 +600,18 @@ class TrollTypeDesktopApp(ctk.CTk):
 
         self.current_ai_task = asyncio.create_task(_process_fresh_target_msg())
 
-    def _start_continuous_stream_loop(self):
-        async def _continuous_worker():
-            while self.tg.is_running and self.non_stop_running:
-                await asyncio.sleep(0.1)
-                if not self.tg.is_running or not self.non_stop_running or not self.tg.active_chat_id:
+    def _start_auto_bait_loop(self):
+        async def _bait_worker():
+            while self.tg.is_running and self.auto_bait_running:
+                await asyncio.sleep(1.0)
+                if not self.tg.is_running or not self.auto_bait_running or not self.tg.active_chat_id:
                     break
                 
+                # Ждем, пока таргет молчит РЕАЛЬНО > 3.5 секунд
+                silence_duration = time.time() - self.tg.last_target_msg_time
+                if silence_duration < 3.5:
+                    continue
+
                 if (self.current_ai_task and not self.current_ai_task.done()) or (self.tg.active_send_task and not self.tg.active_send_task.done()):
                     continue
 
@@ -616,7 +621,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 provoke_with_typos = self.emulator.apply_typos(provoke_text, typo_rate=self.current_typo_rate)
                 chunks = self.emulator.chunk_text(provoke_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
                 
-                self.append_log(f"[NON-STOP 20-BURST] Sending burst: {provoke_text[:35]}...")
+                self.append_log(f"[AUTO-PROVOKE] Silence {silence_duration:.1f}s -> firing burst...")
                 await self.tg.send_ladder_chunks(
                     chat_id=self.tg.active_chat_id,
                     chunks=chunks,
@@ -628,7 +633,7 @@ class TrollTypeDesktopApp(ctk.CTk):
 
         if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():
             self.tg.auto_bait_task.cancel()
-        self.tg.auto_bait_task = self.async_call(_continuous_worker())
+        self.tg.auto_bait_task = self.async_call(_bait_worker())
 
     def toggle_engine(self):
         if not self.tg.is_running:
@@ -641,8 +646,12 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.btn_run.configure(text="■ STOP ENGINE", fg_color=ERROR)
             self.append_log(f"[ENGINE] Running on {self.cfg.selected_chat_title} @ {self.cfg.wpm_rate} WPM")
             
-            if self.non_stop_running:
-                self._start_continuous_stream_loop()
+            # Автоматически резолвим таргет при старте
+            if self.cfg.target_username:
+                self.async_call(self.tg.resolve_target(self.cfg.target_username))
+
+            if self.auto_bait_running:
+                self._start_auto_bait_loop()
         else:
             self.tg.is_running = False
             if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():

@@ -3,6 +3,7 @@ import traceback
 import time
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
+from telethon.tl.types import User
 from typing import Callable, Optional, List, Dict
 from logger import logger
 
@@ -46,6 +47,23 @@ class TelegramHandler:
     async def is_authorized(self) -> bool:
         await self.init_client()
         return await self.client.is_user_authorized()
+
+    async def resolve_target(self, username_or_id: str):
+        """Резолвит точный Telegram ID таргета по юзернейму или имени."""
+        await self.init_client()
+        clean = username_or_id.strip()
+        if not clean:
+            return None
+        try:
+            entity = await self.client.get_entity(clean)
+            if entity:
+                self.target_id = entity.id
+                self.target_username = getattr(entity, 'username', '') or getattr(entity, 'first_name', clean)
+                self.log(f"[TARGET RESOLVED] ID: {self.target_id} | Name: @{self.target_username}")
+                return self.target_id
+        except Exception as e:
+            self.log(f"[TARGET RESOLVE NOTICE] Could not resolve entity via API: {e}. Will match dynamically.")
+        return None
 
     async def send_code(self, phone: str) -> str:
         await self.init_client()
@@ -107,10 +125,18 @@ class TelegramHandler:
             if event.out:
                 return
 
-            sender = await event.get_sender()
             sender_id = event.sender_id
+            
+            # Получаем полные данные отправителя
+            try:
+                sender = await event.get_sender()
+            except Exception:
+                sender = None
+
             username = (getattr(sender, 'username', '') or '').lower().replace('@', '')
             first_name = (getattr(sender, 'first_name', '') or '').lower()
+            last_name = (getattr(sender, 'last_name', '') or '').lower()
+            full_name = f"{first_name} {last_name}".strip()
             
             is_target = False
             if self.target_id and sender_id == self.target_id:
@@ -119,15 +145,20 @@ class TelegramHandler:
                 target_clean = self.target_username.lower().replace('@', '')
                 if username and username == target_clean:
                     is_target = True
-                elif first_name and target_clean in first_name:
+                elif target_clean in first_name or target_clean in full_name:
                     is_target = True
-
-            if not is_target and not getattr(self, 'target_mode_all', False):
-                self.log(f"[USER (SKIPPED)] @{username or first_name}] {event.text or ''}")
-                return
+                elif target_clean.isdigit() and int(target_clean) == sender_id:
+                    is_target = True
 
             if is_target:
                 self.last_target_msg_time = time.time()
+                # Запоминаем точный ID, чтобы дальнейшие сообщения ловились без задержек
+                if not self.target_id and sender_id:
+                    self.target_id = sender_id
+
+            if not is_target and not getattr(self, 'target_mode_all', False):
+                self.log(f"[USER (SKIPPED)] @{username or first_name or sender_id}] {event.text or ''}")
+                return
 
             if self.on_message_callback:
                 asyncio.create_task(self.on_message_callback(event, is_target, sender))
@@ -135,10 +166,9 @@ class TelegramHandler:
     def cancel_active_stream(self):
         if self.active_send_task and not self.active_send_task.done():
             self.active_send_task.cancel()
-            self.log("[PREEMPT] Interrupting current queue to switch to fresh generated response!")
+            self.log("[PREEMPT] Interrupting stream to deliver fresh reaction!")
 
     async def execute_send_ladder(self, chat_id: int, chunks: List[str], ladder_pause: float, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
-        # Отправляем до 20 сообщений за один залп
         active_chunks = chunks[:20]
         
         if active_chunks and target_mention:
@@ -165,7 +195,7 @@ class TelegramHandler:
                 self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
         except asyncio.CancelledError:
-            self.log("[PREEMPT SUCCESS] Switched seamlessly to newly generated reply.")
+            self.log("[PREEMPT SUCCESS] Switched seamlessly to new reaction.")
         except FloodWaitError as fwe:
             self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
             await asyncio.sleep(fwe.seconds + 1)
