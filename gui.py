@@ -55,7 +55,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v3.5")
+        self.title("trolltype // DeepSeek Edition v3.6")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -76,7 +76,6 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.current_typo_rate = 0.06
         self.auto_bait_running = True
         
-        # Debounce & batching очередей таргета
         self.target_message_buffer = deque()
         self.is_processing_ai = False
         
@@ -101,7 +100,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v3.5 debounced reaction master", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v3.6 instant interrupt & anti-repeat", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -546,14 +545,13 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.append_log(f"[TARGET @{sender_title}] {text}")
         self.target_message_buffer.append({"text": text, "msg_id": event.id, "time": time.time()})
 
-        # Если уже идет генерация DeepSeek — не прерываем её, новый запрос подхватит все накопившиеся реплики таргета!
         if self.is_processing_ai:
             return
 
         self.is_processing_ai = True
         try:
-            # Небольшой debounce (0.3с), чтобы объединить быстрые очереди таргета
-            await asyncio.sleep(0.3)
+            # 1. Быстро собираем реплики таргета
+            await asyncio.sleep(0.2)
             
             combined_texts = []
             last_msg_id = event.id
@@ -563,7 +561,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 last_msg_id = item["msg_id"]
 
             aggregated_prompt = " ".join(combined_texts).strip()
-            self.append_log(f"[AI GENERATING REACTION] on: '{aggregated_prompt[:40]}'...")
+            self.append_log(f"[AI GENERATING] Triggered reaction on: '{aggregated_prompt[:35]}'...")
             
             reply_full = await self.ai.generate_reply(sender_title, aggregated_prompt, style=self.cfg.style)
             self.append_log(f"[AI READY] {reply_full[:50]}...")
@@ -572,6 +570,8 @@ class TrollTypeDesktopApp(ctk.CTk):
             chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
 
             mention_tag = self.cfg.target_username if not self.target_mode_all else sender_title
+            
+            # 2. Мгновенно прерываем старую досылку и запускаем свежий ответ с реплаем
             await self.tg.send_ladder_chunks(
                 chat_id=event.chat_id,
                 chunks=chunks,
@@ -591,7 +591,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 if not self.tg.is_running or not self.auto_bait_running or not self.tg.active_chat_id:
                     break
                 
-                if self.tg.is_actively_sending or self.is_processing_ai:
+                if self.is_processing_ai or (self.tg.active_send_task and not self.tg.active_send_task.done()):
                     continue
 
                 silence_duration = time.time() - self.tg.last_target_msg_time
@@ -633,6 +633,7 @@ class TrollTypeDesktopApp(ctk.CTk):
             self.tg.is_running = False
             if self.tg.auto_bait_task and not self.tg.auto_bait_task.done():
                 self.tg.auto_bait_task.cancel()
+            self.tg.cancel_active_stream()
             self.btn_run.configure(text="▶ START ENGINE", fg_color=MAIN)
             self.append_log("[ENGINE] Stopped.")
 

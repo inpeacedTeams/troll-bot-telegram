@@ -23,10 +23,8 @@ class TelegramHandler:
         self.mention_every_n: int = 15
         self.last_target_msg_time: float = time.time()
         
-        self.send_lock = asyncio.Lock()
-        self.is_actively_sending: bool = False
-        
-        self.current_stream_task: Optional[asyncio.Task] = None
+        # Активная таска отправки сообщений (для мгновенной отмены при готовности нового ответа)
+        self.active_send_task: Optional[asyncio.Task] = None
         self.auto_bait_task: Optional[asyncio.Task] = None
         
         self.on_message_callback: Optional[Callable] = None
@@ -125,7 +123,6 @@ class TelegramHandler:
                 elif first_name and target_clean in first_name:
                     is_target = True
 
-            # КРИТИЧЕСКИЙ ФИКС: сообщения от посторонних юзеров НЕ ДОЛЖНЫ трогать текущий стрим!
             if not is_target and not getattr(self, 'target_mode_all', False):
                 self.log(f"[USER (SKIPPED)] @{username or first_name}] {event.text or ''}")
                 return
@@ -136,42 +133,55 @@ class TelegramHandler:
             if self.on_message_callback:
                 asyncio.create_task(self.on_message_callback(event, is_target, sender))
 
+    def cancel_active_stream(self):
+        """Мгновенно прерывает отправку старой очереди, чтобы освободить канал для нового ответа."""
+        if self.active_send_task and not self.active_send_task.done():
+            self.active_send_task.cancel()
+            self.log("[INTERRUPT STREAM] Cancelled old queue to deliver fresh reply!")
+
+    async def execute_send_ladder(self, chat_id: int, chunks: List[str], ladder_pause: float, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
+        active_chunks = chunks[:30]
+        
+        if active_chunks and target_mention:
+            clean_tag = target_mention.strip()
+            if " " not in clean_tag:
+                if not clean_tag.startswith('@'):
+                    clean_tag = f"@{clean_tag}"
+                if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
+                    active_chunks[0] = f"{clean_tag} {active_chunks[0]}"
+
+        try:
+            for idx, chunk in enumerate(active_chunks):
+                if not self.is_running:
+                    break
+                
+                await asyncio.sleep(max(0.38, ladder_pause))
+                
+                if idx == 0 and reply_to_msg_id:
+                    await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
+                else:
+                    await self.client.send_message(chat_id, chunk)
+                    
+                self.total_sent_count += 1
+                self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
+
+        except asyncio.CancelledError:
+            self.log("[QUEUE INTERRUPTED] Switched seamlessly to new response.")
+        except FloodWaitError as fwe:
+            self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
+            await asyncio.sleep(fwe.seconds + 1)
+        except Exception as e:
+            self.log(f"[SEND ERROR] {e}", level="ERROR")
+            await asyncio.sleep(0.5)
+        finally:
+            self.last_target_msg_time = time.time()
+
     async def send_ladder_chunks(self, chat_id: int, chunks: List[str], ladder_pause: float, wpm: int, emulator, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
-        async with self.send_lock:
-            self.is_actively_sending = True
-            active_chunks = chunks[:35]
-            
-            if active_chunks and target_mention:
-                clean_tag = target_mention.strip()
-                if " " not in clean_tag:
-                    if not clean_tag.startswith('@'):
-                        clean_tag = f"@{clean_tag}"
-                    if self.total_sent_count == 0 or (self.total_sent_count % self.mention_every_n == 0):
-                        active_chunks[0] = f"{clean_tag} {active_chunks[0]}"
-
-            try:
-                for idx, chunk in enumerate(active_chunks):
-                    if not self.is_running:
-                        break
-                    
-                    await asyncio.sleep(max(0.40, ladder_pause))
-                    
-                    if idx == 0 and reply_to_msg_id:
-                        await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
-                    else:
-                        await self.client.send_message(chat_id, chunk)
-                        
-                    self.total_sent_count += 1
-                    self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
-
-            except asyncio.CancelledError:
-                self.log("[STREAM INTERRUPTED]")
-            except FloodWaitError as fwe:
-                self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
-                await asyncio.sleep(fwe.seconds + 1)
-            except Exception as e:
-                self.log(f"[SEND ERROR] {e}", level="ERROR")
-                await asyncio.sleep(0.5)
-            finally:
-                self.is_actively_sending = False
-                self.last_target_msg_time = time.time()
+        # 1. Прерываем предыдущую таску отправки
+        self.cancel_active_stream()
+        
+        # 2. Запускаем новую таску отправки
+        self.active_send_task = asyncio.create_task(
+            self.execute_send_ladder(chat_id, chunks, ladder_pause, target_mention, reply_to_msg_id)
+        )
+        await self.active_send_task
