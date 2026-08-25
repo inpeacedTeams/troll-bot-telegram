@@ -3,7 +3,6 @@ import os
 import asyncio
 import threading
 import time
-from collections import deque
 import customtkinter as ctk
 from datetime import datetime
 
@@ -55,7 +54,7 @@ class AnimatedPillButton(ctk.CTkButton):
 class TrollTypeDesktopApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("trolltype // DeepSeek Edition v4.4")
+        self.title("trolltype // Zero-Latency React Engine v4.7")
         self.geometry("1080x780")
         self.minsize(920, 640)
         self.configure(fg_color=BG)
@@ -76,8 +75,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.current_typo_rate = 0.06
         self.non_stop_running = True
         
-        self.target_message_buffer = deque()
-        self.is_generating_reaction = False
+        self.current_ai_task: Optional[asyncio.Task] = None
         
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_async_loop, daemon=True)
@@ -100,7 +98,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         logo = ctk.CTkLabel(header, text="⚡ trolltype", font=("JetBrains Mono", 22, "bold"), text_color=MAIN)
         logo.pack(side="left")
 
-        ai_tag = ctk.CTkLabel(header, text="v4.4 15-msg burst with live preemption", font=("JetBrains Mono", 11), text_color=SUB)
+        ai_tag = ctk.CTkLabel(header, text="v4.7 sub-second instant react engine", font=("JetBrains Mono", 11), text_color=SUB)
         ai_tag.pack(side="left", padx=12)
 
         self.lbl_status = ctk.CTkLabel(header, text="AUTH: CHECKING...", font=("JetBrains Mono", 12), text_color=SUB)
@@ -348,7 +346,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.cfg.auto_bait_enabled = self.non_stop_running
         self.cfg.save()
         if self.non_stop_running:
-            self.append_log("[NON-STOP] Enabled: Continuous 15-msg stream loop.")
+            self.append_log("[NON-STOP] Enabled: Continuous stream.")
             if self.tg.is_running:
                 self._start_continuous_stream_loop()
         else:
@@ -436,7 +434,7 @@ class TrollTypeDesktopApp(ctk.CTk):
         self.tg.target_id = None
         self.lbl_active_target.configure(text=f"@{uname}" if uname else "None")
         self.cfg.save()
-        self.append_log(f"[TARGET] Manual target set to: @{uname}")
+        self.append_log(f"[TARGET SET] Target set to: @{uname}")
 
     async def _check_initial_auth(self):
         authed = await self.tg.is_authorized()
@@ -540,7 +538,7 @@ class TrollTypeDesktopApp(ctk.CTk):
 
     async def _handle_incoming_message(self, event, is_target: bool, sender):
         sender_title = getattr(sender, 'username', '') or getattr(sender, 'first_name', 'Unknown')
-        text = event.text or ""
+        text = (event.text or "").strip()
         
         is_reply_to_other = False
         if event.reply_to_msg_id:
@@ -554,63 +552,25 @@ class TrollTypeDesktopApp(ctk.CTk):
                 pass
 
         silence_gap = time.time() - self.tg.last_target_msg_time
-        was_silent_before = silence_gap > 4.0
+        was_silent_before = silence_gap > 3.5
 
-        intent = self.ai.analyze_message_intent(text, is_reply_to_other=is_reply_to_other)
-        is_challenge = intent["is_challenge"]
-        should_respond_now = intent["should_respond"]
-
-        tag_status = "[CHALLENGE: REACT]" if is_challenge else ("[MOCK: REACT]" if should_respond_now else "[PASS/CONTINUE]")
-        self.append_log(f"[TARGET @{sender_title}] {text} {tag_status}")
+        self.append_log(f"[TARGET INBOUND @{sender_title}] '{text}' -> INSTANT REACTION TRIGGERED")
         
-        if not should_respond_now:
-            return
+        # Сразу отменяем предыдущую генерацию если она шла
+        if self.current_ai_task and not self.current_ai_task.done():
+            self.current_ai_task.cancel()
 
-        self.target_message_buffer.append({
-            "text": text,
-            "msg_id": event.id,
-            "is_challenge": is_challenge,
-            "reply_to_other": is_reply_to_other,
-            "was_silent": was_silent_before,
-            "time": time.time()
-        })
-
-        if self.is_generating_reaction:
-            return
-
-        self.is_generating_reaction = True
-        try:
-            await asyncio.sleep(0.1)
-            
-            combined_texts = []
-            last_msg_id = event.id
-            has_reply_to_other = False
-            has_challenge = False
-            had_silence = False
-            
-            while self.target_message_buffer:
-                item = self.target_message_buffer.popleft()
-                combined_texts.append(item["text"])
-                last_msg_id = item["msg_id"]
-                if item.get("reply_to_other"):
-                    has_reply_to_other = True
-                if item.get("is_challenge"):
-                    has_challenge = True
-                if item.get("was_silent"):
-                    had_silence = True
-
-            aggregated_prompt = " ".join(combined_texts).strip()
-            self.append_log(f"[AI GENERATING REACTION] on '{aggregated_prompt[:35]}'...")
-            
+        async def _process_instant_reaction():
+            # Мгновенная генерация (до 1-1.8с) или моментальный ответ за 0.01с
             reply_full = await self.ai.generate_reply(
                 sender_title,
-                aggregated_prompt,
-                is_challenge=has_challenge,
-                is_reply_to_other=has_reply_to_other,
-                was_silent_before=had_silence,
+                text,
+                is_challenge=True,
+                is_reply_to_other=is_reply_to_other,
+                was_silent_before=was_silent_before,
                 style=self.cfg.style
             )
-            self.append_log(f"[AI READY -> PREEMPTING STREAM] {reply_full[:50]}...")
+            self.append_log(f"[INSTANT REACT READY] {reply_full[:50]}...")
 
             reply_with_typos = self.emulator.apply_typos(reply_full, typo_rate=self.current_typo_rate)
             chunks = self.emulator.chunk_text(reply_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
@@ -624,10 +584,10 @@ class TrollTypeDesktopApp(ctk.CTk):
                 wpm=self.cfg.wpm_rate,
                 emulator=self.emulator,
                 target_mention=mention_tag,
-                reply_to_msg_id=last_msg_id
+                reply_to_msg_id=event.id
             )
-        finally:
-            self.is_generating_reaction = False
+
+        self.current_ai_task = asyncio.create_task(_process_instant_reaction())
 
     def _start_continuous_stream_loop(self):
         async def _continuous_worker():
@@ -636,7 +596,13 @@ class TrollTypeDesktopApp(ctk.CTk):
                 if not self.tg.is_running or not self.non_stop_running or not self.tg.active_chat_id:
                     break
                 
-                if self.is_generating_reaction or (self.tg.active_send_task and not self.tg.active_send_task.done()):
+                # Если сейчас генерируется реакция или активно шлется ответ на сообщение таргета — ждем
+                if (self.current_ai_task and not self.current_ai_task.done()) or (self.tg.active_send_task and not self.tg.active_send_task.done()):
+                    continue
+
+                # Проверяем, действительно ли прошло время тишины
+                silence_duration = time.time() - self.tg.last_target_msg_time
+                if silence_duration < 3.5:
                     continue
 
                 target_name = self.cfg.target_username or "жертва"
@@ -645,7 +611,7 @@ class TrollTypeDesktopApp(ctk.CTk):
                 provoke_with_typos = self.emulator.apply_typos(provoke_text, typo_rate=self.current_typo_rate)
                 chunks = self.emulator.chunk_text(provoke_with_typos, self.cfg.min_chunk_words, self.cfg.max_chunk_words)
                 
-                self.append_log(f"[NON-STOP 15-BURST] Sending burst: {provoke_text[:35]}...")
+                self.append_log(f"[NON-STOP 15-BURST] Sending silence provoke ({silence_duration:.1f}s)...")
                 await self.tg.send_ladder_chunks(
                     chat_id=self.tg.active_chat_id,
                     chunks=chunks,

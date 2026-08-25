@@ -107,11 +107,18 @@ class TelegramHandler:
             if event.out:
                 return
 
-            sender = await event.get_sender()
             sender_id = event.sender_id
-            username = (getattr(sender, 'username', '') or '').lower().replace('@', '')
-            first_name = (getattr(sender, 'first_name', '') or '').lower()
             
+            # Быстрое извлечение имени и юзернейма без блокирующих вызовов
+            username = ""
+            first_name = ""
+            try:
+                sender = await event.get_sender()
+                username = (getattr(sender, 'username', '') or '').lower().replace('@', '')
+                first_name = (getattr(sender, 'first_name', '') or '').lower()
+            except Exception:
+                sender = None
+
             is_target = False
             if self.target_id and sender_id == self.target_id:
                 is_target = True
@@ -121,13 +128,21 @@ class TelegramHandler:
                     is_target = True
                 elif first_name and target_clean in first_name:
                     is_target = True
+                elif target_clean.isdigit() and int(target_clean) == sender_id:
+                    is_target = True
 
-            if not is_target and not getattr(self, 'target_mode_all', False):
-                self.log(f"[USER (SKIPPED)] @{username or first_name}] {event.text or ''}")
+            # Режим "Троллить ВСЕХ"
+            if getattr(self, 'target_mode_all', False):
+                is_target = True
+
+            if not is_target:
+                self.log(f"[USER (SKIPPED)] @{username or first_name or sender_id}] {event.text or ''}")
                 return
 
-            if is_target:
-                self.last_target_msg_time = time.time()
+            # Как только пришло сообщение от таргета — мгновенно обновляем время!
+            self.last_target_msg_time = time.time()
+            if not self.target_id and sender_id:
+                self.target_id = sender_id
 
             if self.on_message_callback:
                 asyncio.create_task(self.on_message_callback(event, is_target, sender))
@@ -135,7 +150,7 @@ class TelegramHandler:
     def cancel_active_stream(self):
         if self.active_send_task and not self.active_send_task.done():
             self.active_send_task.cancel()
-            self.log("[PREEMPT] Interrupting current queue to switch to fresh generated response!")
+            self.log("[PREEMPT] Instantly interrupted ongoing stream for fresh reaction!")
 
     async def execute_send_ladder(self, chat_id: int, chunks: List[str], ladder_pause: float, target_mention: Optional[str] = None, reply_to_msg_id: Optional[int] = None):
         active_chunks = chunks[:15]
@@ -153,7 +168,7 @@ class TelegramHandler:
                 if not self.is_running:
                     break
                 
-                await asyncio.sleep(max(0.38, ladder_pause))
+                await asyncio.sleep(max(0.35, ladder_pause))
                 
                 if idx == 0 and reply_to_msg_id:
                     await self.client.send_message(chat_id, chunk, reply_to=reply_to_msg_id)
@@ -164,7 +179,7 @@ class TelegramHandler:
                 self.log(f"[SENT #{idx+1}/{len(active_chunks)}] (Total: {self.total_sent_count}) {chunk}")
 
         except asyncio.CancelledError:
-            self.log("[PREEMPT SUCCESS] Switched seamlessly to newly generated reply.")
+            self.log("[PREEMPT SUCCESS] Switched seamlessly to new reaction.")
         except FloodWaitError as fwe:
             self.log(f"[FLOOD WAIT] Need to wait {fwe.seconds}s", level="ERROR")
             await asyncio.sleep(fwe.seconds + 1)
